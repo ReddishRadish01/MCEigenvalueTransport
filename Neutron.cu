@@ -93,7 +93,6 @@ __host__ __device__ void Neutron::Nullify() {
 	this->dirVec = { 0.0, 0.0, 0.0 };
 	this->energy = 0.0;
 	this->status = false;
-
 }
 
 __host__ __device__ void Neutron::reInitialize(vec3 pos, vec3 dirVec, double energy) {
@@ -104,8 +103,8 @@ __host__ __device__ void Neutron::reInitialize(vec3 pos, vec3 dirVec, double ene
 }
 
 __host__ __device__ bool Neutron::isNullified() const {
-	if (this->status) { return true; }
-	else { return false; }
+	if (this->status) { return false; }
+	else { return true; }
 }
 
 __host__ __device__ void Neutron::updateWithLength(double length) { 
@@ -141,20 +140,29 @@ __host__ __device__ void NeutronDistribution::setNeutrons(Spherical dir, double 
 __host__ __device__ 
 void NeutronDistribution::setUniformNeutrons(double D_x, double D_y, double D_z) {
 	GnuAMCM RNG(this->seedNo);
-	for (int i = 0; i < int(this->neutronSize); i++) {
-		this->neutrons[i].pos.x = RNG.uniform_open(0, D_x);
-		this->neutrons[i].pos.y = RNG.uniform_open(0, D_y);
-		this->neutrons[i].pos.z = RNG.uniform_open(0, D_z);
-		this->neutrons[i].dirVec = vec3::randomUnit(RNG);
-		//this->neutrons[i].energy = 0.0;
-	}
-	
-}
+	for (int i = 0; i < int(this->allocatableNeutronNum); i++) {
+		if (i < this->neutronSize) {
+			this->neutrons[i].pos.x = RNG.uniform_open(0.0, D_x);
+			this->neutrons[i].pos.y = RNG.uniform_open(0.0, D_y);
+			this->neutrons[i].pos.z = RNG.uniform_open(0.0, D_z);
+			this->neutrons[i].dirVec = vec3::randomUnit(RNG);
+			this->neutrons[i].status = true;
+			//this->neutrons[i].energy = 0.0;
 
+			this->addedNeutrons[i].Nullify();
+		}
+		else {
+			this->neutrons[i].Nullify();
+			this->addedNeutrons[i].Nullify();
+		}
+	}
+}
+/*
 __host__ void NeutronDistribution::updateAddedNeutronStatus() {
 	this->addedNeutronSize = this->addedNeutronIndex;
 
 }
+*/
 
 
 __host__ NeutronThrustDevice NeutronThrustHost::HtoD(thrust::device_vector<Neutron>& d_Neutrons, thrust::device_vector<Neutron>& d_addedNeutrons) {
@@ -173,8 +181,8 @@ __host__ void NeutronThrustHost::setUniformNeutron(double D_x, double D_y, doubl
 }
 
 
-__host__ __device__ void NeutronThrustManager::mergeCheck(NeutronDistribution& Neutrons) {
-	if (Neutrons.addedNeutronSize > 0.9 * Neutrons.allocatableNeutrons) {
+__host__ void NeutronThrustManager::mergeCheck(NeutronDistribution& Neutrons) {
+	if (Neutrons.addedNeutronSize > 0.9 * Neutrons.allocatableNeutronNum) {
 		NeutronThrustManager::MergeNeutron(Neutrons);
 	}
 	else { return; }

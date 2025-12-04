@@ -15,7 +15,7 @@
 
 enum ReactionType {
 	scatter,
-	absorption,
+	capture,
 	fission
 };
 
@@ -41,7 +41,7 @@ struct ReflectiveSlab {
 		inline ReactionType getInteractionType(Neutron incidentNeutron, GnuAMCM& RNG) {
 		double cumulativeXS = this->MacroXS_a + this->MacroXS_s + this->MacroXS_f;
 		double rngNo = RNG.uniform(0.0, cumulativeXS);
-		if (rngNo < this->MacroXS_a) { return ReactionType::absorption; }
+		if (rngNo < this->MacroXS_a) { return ReactionType::capture; }
 		else if (rngNo < this->MacroXS_a + MacroXS_s) { return ReactionType::scatter; }
 		else { return ReactionType::fission; }
 	}
@@ -50,7 +50,7 @@ struct ReflectiveSlab {
 	__host__ __device__
 		double inline getInteracitonXS(Neutron incidentNeutron, GnuAMCM& RNG) {
 		ReactionType rType = this->getInteractionType(incidentNeutron, RNG);
-		if (rType == ReactionType::absorption) { return this->MacroXS_a; }
+		if (rType == ReactionType::capture) { return this->MacroXS_a; }
 		else { return this->MacroXS_s; }
 	}
 
@@ -73,7 +73,7 @@ struct ReflectiveSlab {
 	// returns [m].
 	__host__ __device__
 		inline double averageDistance(Neutron incidentNeutron, GnuAMCM& RNG) {
-		double distance = -1.0 / (this->MacroXS_a + this->MacroXS_s) / 100 * log(RNG.uniform_open(0.0, 1.0));
+		double distance = -1.0 / (this->MacroXS_a + this->MacroXS_s + this->MacroXS_f) / 100 * log(RNG.uniform_open(0.0, 1.0));
 		return distance;
 	}
 
@@ -88,7 +88,7 @@ struct ReflectiveSlab {
 
 	__host__ __device__ void absorption(Neutron& incidentNeutron);
 
-	__device__ void fission(Neutron& incidentNeutron, NeutronDistribution* Neutrons, GnuAMCM& RNG, int* k);
+	__device__ void fission(Neutron& incidentNeutron, NeutronDistribution* Neutrons, GnuAMCM& RNG, double* k);
 
 	__host__ __device__ double calculate_k(NeutronDistribution& Neutrons, int& previousCount);
 };

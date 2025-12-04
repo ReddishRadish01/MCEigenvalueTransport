@@ -51,8 +51,8 @@ double ReflectiveSlab::DTS(Neutron& incidentNeutron, vec3& dirNormal) {
 	else if (incidentNeutron.dirVec.y < 0.0) { tY = -incidentNeutron.pos.y / incidentNeutron.dirVec.y; tY_Dir = N_xz_Neg; }
 	
 	double tZ = 0.0; vec3 tZ_Dir = N_xy_Pos;
-	if (incidentNeutron.dirVec.x > 0.0) { tZ = (this->D_z - incidentNeutron.pos.z) / incidentNeutron.dirVec.z; }
-	else if (incidentNeutron.dirVec.x < 0.0) { tZ = -incidentNeutron.pos.z / incidentNeutron.dirVec.z; tZ_Dir = N_xy_Neg; }
+	if (incidentNeutron.dirVec.z > 0.0) { tZ = (this->D_z - incidentNeutron.pos.z) / incidentNeutron.dirVec.z; }
+	else if (incidentNeutron.dirVec.z < 0.0) { tZ = -incidentNeutron.pos.z / incidentNeutron.dirVec.z; tZ_Dir = N_xy_Neg; }
 
 
 	// tHit : Distance to the collision (DTC)
@@ -73,11 +73,13 @@ double ReflectiveSlab::DTS(Neutron& incidentNeutron, vec3& dirNormal) {
 	return tHit;
 }
 
-
+/*
+// we need to redesign this reflection: this recursion is bad? idk
 __host__ __device__
 void ReflectiveSlab::reflection(Neutron& incidentNeutron, double DTC, double DTS, vec3 dirNormal, GnuAMCM& RNG, int& counter) {
 	if (counter > 10) {
 		incidentNeutron.Nullify();
+		return;
 	}
 	// when given: d=directional vector of particle, n=surface normal
 	// reflected direction \vec{r} = d - 2 (d \cdot n) n    <---- meh this fucking thing ahhh so hard to intuitively think about - its my skill issue
@@ -104,6 +106,44 @@ void ReflectiveSlab::reflection(Neutron& incidentNeutron, double DTC, double DTS
 	}
 
 }
+*/
+
+__host__ __device__
+void ReflectiveSlab::reflection(Neutron& n,
+	double DTC, double DTS,
+	vec3 dirNormal,
+	GnuAMCM& RNG,
+	int& counter)
+{
+	// handle the *first* segment we already computed
+	for (int bounce = 0; bounce <= 10; ++bounce) {
+		// kill after too many bounces
+		if (bounce > 0) {
+			// for bounce > 0, recompute DTC/DTS with updated neutron
+			DTC = this->DTC(n, RNG);
+			dirNormal = vec3{ 0,0,0 };
+			DTS = this->DTS(n, dirNormal);
+		}
+
+		vec3 collisionPos = n.pos + n.dirVec * DTS;
+		vec3 reflectVec = n.dirVec - dirNormal * (2 * n.dirVec.dot(dirNormal));
+		vec3 afterPos = collisionPos + reflectVec * (DTC - DTS);
+
+		if (!this->outOfRange(afterPos)) {
+			// we safely end inside the slab
+			n.pos = afterPos;
+			n.dirVec = reflectVec;
+			return;
+		}
+
+		// still out of range: update neutron to collision point and reflect
+		n.pos = collisionPos;
+		n.dirVec = reflectVec;
+	}
+
+	// too many bounces, kill neutron
+	n.Nullify();
+}
 
 __host__ __device__
 void ReflectiveSlab::elasticScattering(Neutron& incidentNeutron, GnuAMCM& RNG) {
@@ -115,21 +155,27 @@ void ReflectiveSlab::absorption(Neutron& incidentNeutron) {
 	incidentNeutron.Nullify();
 }
 
+// the fucking concurrency man --------- FUCKKKKKKKK!!!!!!!!!!!!!!!!
 __device__
-void ReflectiveSlab::fission(Neutron& incidentNeutron, NeutronDistribution* Neutrons, GnuAMCM& RNG, int* k) {
+void ReflectiveSlab::fission(Neutron& incidentNeutron, NeutronDistribution* Neutrons, GnuAMCM& RNG, double* k) {
 	int fissionNum = int(this->nu / *k + RNG.uniform(0.0, 1.0));
 	// assign as fission neutron;
 	incidentNeutron.dirVec = vec3::randomUnit(RNG);
-	// this is problematic? im not sure
+	int addIndex = atomicAdd(&(Neutrons->addedNeutronIndex), fissionNum - 1);
+	atomicAdd(&(Neutrons->addedNeutronSize), fissionNum - 1);
+
 	for (int i = 0; i < fissionNum - 1; i++) {
-		Neutrons->addedNeutrons[Neutrons->addedNeutronIndex].dirVec = vec3::randomUnit(RNG);
-		atomicAdd(&(Neutrons->addedNeutronIndex), 1);
+		Neutrons->addedNeutrons[addIndex + i].status = true;
+		Neutrons->addedNeutrons[addIndex + i].pos = incidentNeutron.pos;
+		Neutrons->addedNeutrons[addIndex + i].dirVec = vec3::randomUnit(RNG);
+		Neutrons->addedNeutrons[addIndex + i].passFlag = true;
+		// note: addedNeutronIndex is kept as numbers - you have to minus 1 the index when assigning to arrays.
 		// this fucking atomicAdd is __device__ or __global__ propreitary functions - no hosts
 	}
 }
 
 __host__ __device__ double ReflectiveSlab::calculate_k(NeutronDistribution& Neutrons, int& previousNum) {
-	double k = Neutrons.neutronSize + Neutrons.addedNeutronSize / double(previousNum);
+	double k = (Neutrons.neutronSize + Neutrons.addedNeutronSize) / double(previousNum);
 	previousNum = Neutrons.neutronSize + Neutrons.addedNeutronSize;
 	return k;
 }

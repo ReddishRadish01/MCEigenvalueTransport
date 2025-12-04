@@ -10,6 +10,21 @@
       <Platform>x64</Platform>
     </ProjectConfiguration>
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Constants.cuh" />
+    <ClInclude Include="FuelKernel.cuh" />
+    <ClInclude Include="Neutron.cuh" />
+    <ClInclude Include="RNG.cuh" />
+    <ClInclude Include="Tally.cuh" />
+    <ClInclude Include="thrustHeader.cuh" />
+  </ItemGroup>
+  <ItemGroup>
+    <CudaCompile Include="FuelKernel.cu" />
+    <CudaCompile Include="MCEigenvalueTransport.cu" />
+    <CudaCompile Include="Neutron.cu" />
+    <CudaCompile Include="RNG.cu" />
+    <CudaCompile Include="Tally.cu" />
+  </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{9D88F7EE-211C-527F-20A4-8AEFD95691B9}</ProjectGuid>
     <RootNamespace>MCEigenvalueTransport</RootNamespace>
@@ -82,21 +97,6 @@
       <AdditionalOptions>--extended-lambda %(AdditionalOptions)</AdditionalOptions>
     </CudaCompile>
   </ItemDefinitionGroup>
-  <ItemGroup>
-    <CudaCompile Include="FuelKernel.cu" />
-    <CudaCompile Include="MCEigenvalueTransport.cu" />
-    <CudaCompile Include="Neutron.cu" />
-    <CudaCompile Include="RNG.cu" />
-    <CudaCompile Include="Tally.cu" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="Constants.cuh" />
-    <ClInclude Include="FuelKernel.cuh" />
-    <ClInclude Include="Tally.cuh" />
-    <ClInclude Include="Neutron.cuh" />
-    <ClInclude Include="RNG.cuh" />
-    <ClInclude Include="thrustHeader.cuh" />
-  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
     <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 12.9.targets" />

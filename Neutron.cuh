@@ -99,16 +99,17 @@ struct Neutron {
 	vec3 dirVec;		// UNIT VECTOR
 	double energy;	// eV !!!
 	bool status;
+	bool passFlag;
 
 	__host__ __device__ Neutron()
-		: pos({ 0.0, 0.0, 0.0 }), dirVec({ 0.0, 0.0, 0.0 }), energy(0.0) {}
+		: pos({ 0.0, 0.0, 0.0 }), dirVec({ 0.0, 0.0, 0.0 }), energy(0.0), status(false), passFlag(true) {}
 
 	__host__ __device__ Neutron(vec3 pos, vec3 dirVec, double energy)
-		: pos(pos), dirVec(dirVec), energy(energy), status(true)
+		: pos(pos), dirVec(dirVec), energy(energy), status(true), passFlag(false)
 	{}
 
 	__host__ __device__ Neutron(vec3 pos, Spherical sphercial, double energy) 
-		: pos(pos), dirVec(sphercial.convToVec3()), energy(energy), status(true)
+		: pos(pos), dirVec(sphercial.convToVec3()), energy(energy), status(true), passFlag(false)
 	{
 
 	}
@@ -122,6 +123,12 @@ struct Neutron {
 
 	__host__ __device__ void updateWithLength(double length);
 	
+	__host__ inline void printInfo() {
+		std::cout << "(" << this->pos.x << ", " << this->pos.y << ", " << this->pos.z << "),  ";
+		std::cout << "(" << this->dirVec.x << ", " << this->dirVec.y << ", " << this->dirVec.z << ") , status: ";
+		if (this->status) { std::cout << " true.\n"; }
+		else { std::cout << " false.\n"; }
+	}
 
 };
 
@@ -129,29 +136,34 @@ struct Neutron {
 struct NeutronDistribution {
 	Neutron* neutrons;
 	Neutron* addedNeutrons;
-	unsigned int neutronSize;
-	unsigned int addedNeutronSize;
-	unsigned int addedNeutronIndex;
-	unsigned int allocatableNeutrons;
+	int neutronSize;
+	int allocatableNeutronNum;
+	int addedNeutronSize;
+	int addedNeutronIndex;
 	unsigned long long seedNo;
 
-	__host__ __device__ NeutronDistribution(unsigned int allocatableNeutrons, unsigned int initialNumNeutrons, unsigned long long seedNo)
-		: neutrons(new Neutron[allocatableNeutrons]), addedNeutrons(new Neutron[allocatableNeutrons]), neutronSize(initialNumNeutrons),
-		addedNeutronSize(0), addedNeutronIndex(0), allocatableNeutrons(allocatableNeutrons), seedNo(seedNo)
+	__host__ __device__ NeutronDistribution( unsigned int initialNeutronNum, unsigned long long seedNo)
+		: neutrons(new Neutron[initialNeutronNum]), addedNeutrons(new Neutron[initialNeutronNum]), neutronSize(initialNeutronNum), allocatableNeutronNum(initialNeutronNum),
+		addedNeutronSize(0), addedNeutronIndex(0), seedNo(seedNo)
 	{}
 
 	
 	__host__ __device__ ~NeutronDistribution() {
 		// Note this delete[] operation will also deallocate the device side shits:
 		// you must nullptr a temporary objects containing device pointers.
-		delete[] neutrons;
-		delete[] addedNeutrons;
+		// this will be manually done at the end of the main file
+		//delete[] neutrons;
+		//delete[] addedNeutrons;
+	}
+
+	__host__ __device__ inline int getTotalNeutronNum() {
+		return this->addedNeutronSize + this->neutronSize;
 	}
 	
 
 	__host__ __device__ void setNeutrons(Spherical Dir, double energy);
 	__host__ __device__ void setUniformNeutrons(double D_x, double D_y, double D_z);
-	__host__ __device__ void updateAddedNeutronStatus();
+	//__host__ __device__ void updateAddedNeutronStatus();
 };
 
 struct NeutronThrustDevice {
