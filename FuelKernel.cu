@@ -5,11 +5,16 @@
 #include <ctime>
 #include <math.h>
 
+//#include "DebugFlag.cuh"
 
 #include "Constants.cuh"
 #include "RNG.cuh"
 #include "Neutron.cuh"
 #include "FuelKernel.cuh"
+
+//#define DEBUG
+//#define REFLECT
+
 
 // returns [m]
 __host__ __device__
@@ -113,10 +118,11 @@ void ReflectiveSlab::reflection(Neutron& n,
 	double DTC, double DTS,
 	vec3 dirNormal,
 	GnuAMCM& RNG,
-	int& counter)
-{
+	int idx)
+{	
+	int count = 0;
 	// handle the *first* segment we already computed
-	for (int bounce = 0; bounce <= 10; ++bounce) {
+	for (int bounce = 0; bounce <= 3000; ++bounce) {
 		// kill after too many bounces
 		if (bounce > 0) {
 			// for bounce > 0, recompute DTC/DTS with updated neutron
@@ -139,10 +145,15 @@ void ReflectiveSlab::reflection(Neutron& n,
 		// still out of range: update neutron to collision point and reflect
 		n.pos = collisionPos;
 		n.dirVec = reflectVec;
+		count = bounce;
 	}
 
 	// too many bounces, kill neutron
 	n.Nullify();
+#ifdef REFLECT
+	printf("Neutron nullified because maximum bounce: idx %d. number of bounces: %d\n", idx, count);
+#endif
+
 }
 
 __host__ __device__
@@ -157,8 +168,12 @@ void ReflectiveSlab::absorption(Neutron& incidentNeutron) {
 
 // the fucking concurrency man --------- FUCKKKKKKKK!!!!!!!!!!!!!!!!
 __device__
-void ReflectiveSlab::fission(Neutron& incidentNeutron, NeutronDistribution* Neutrons, GnuAMCM& RNG, double* k) {
-	int fissionNum = int(this->nu / *k + RNG.uniform(0.0, 1.0));
+void ReflectiveSlab::fission(Neutron& incidentNeutron, NeutronDistribution* Neutrons, GnuAMCM& RNG, double* k, bool passFlag) {
+	double rngNo = RNG.uniform(0.0, 1.0);
+	int fissionNum = int(this->nu / *k + rngNo);
+#ifdef DEBUG
+	printf("nu: %f, k: %f, rngNo: %f, therefore fission neutron number: %d\n", this->nu, *k, rngNo, fissionNum);
+#endif
 	// assign as fission neutron;
 	incidentNeutron.dirVec = vec3::randomUnit(RNG);
 	int addIndex = atomicAdd(&(Neutrons->addedNeutronIndex), fissionNum - 1);
@@ -168,7 +183,7 @@ void ReflectiveSlab::fission(Neutron& incidentNeutron, NeutronDistribution* Neut
 		Neutrons->addedNeutrons[addIndex + i].status = true;
 		Neutrons->addedNeutrons[addIndex + i].pos = incidentNeutron.pos;
 		Neutrons->addedNeutrons[addIndex + i].dirVec = vec3::randomUnit(RNG);
-		Neutrons->addedNeutrons[addIndex + i].passFlag = true;
+		Neutrons->addedNeutrons[addIndex + i].passFlag = passFlag;
 		// note: addedNeutronIndex is kept as numbers - you have to minus 1 the index when assigning to arrays.
 		// this fucking atomicAdd is __device__ or __global__ propreitary functions - no hosts
 	}

@@ -102,7 +102,7 @@ struct Neutron {
 	bool passFlag;
 
 	__host__ __device__ Neutron()
-		: pos({ 0.0, 0.0, 0.0 }), dirVec({ 0.0, 0.0, 0.0 }), energy(0.0), status(false), passFlag(true) {}
+		: pos({ 0.0, 0.0, 0.0 }), dirVec({ 0.0, 0.0, 0.0 }), energy(0.0), status(false), passFlag(false) {}
 
 	__host__ __device__ Neutron(vec3 pos, vec3 dirVec, double energy)
 		: pos(pos), dirVec(dirVec), energy(energy), status(true), passFlag(false)
@@ -126,10 +126,27 @@ struct Neutron {
 	__host__ inline void printInfo() {
 		std::cout << "(" << this->pos.x << ", " << this->pos.y << ", " << this->pos.z << "),  ";
 		std::cout << "(" << this->dirVec.x << ", " << this->dirVec.y << ", " << this->dirVec.z << ") , status: ";
-		if (this->status) { std::cout << " true.\n"; }
-		else { std::cout << " false.\n"; }
+		if (this->status) { std::cout << " true.  "; }
+		else { std::cout << " false.  "; }
+		
+		std::cout << "passFlag: ";
+		if (this->passFlag) { std::cout << "true.\n"; }
+		else { std::cout << "false.\n"; }
 	}
 
+
+	__device__ inline void printInfo_Kernel(int idx) {
+		const char* str_status;
+		const char* str_passFlag;
+		if (this->status) { str_status = "true"; }
+		else { str_status = "false"; }
+
+		if (this->passFlag) { str_passFlag = "true"; }
+		else { str_passFlag = "false"; }
+
+		printf("index %d: ( %.5f, %.5f, %.5f ), ( %.5f, %.5f, %.5f ), status: %s, passflag: %s\n", 
+			idx, this->pos.x, this->pos.y, this->pos.z, this->dirVec.x, this->dirVec.y, this->dirVec.z, str_status, str_passFlag);
+	}
 };
 
 

@@ -6,23 +6,14 @@
 #include <iostream>
 
 
+//#include "DebugFlag.cuh"
+
 #include "RNG.cuh"
 #include "Neutron.cuh"
 #include "FuelKernel.cuh"
 
- /*
-  *  ___     ___      _ _ _         _       __  __                            _             _       __  __         _    _          
-  * |_ _|   | _ )_  _(_) | |_      /_\     |  \/  |___ _ __  ___ _ _ _  _    | |   ___ __ _| |__   |  \/  |__ _ __| |_ (_)_ _  ___ 
-  *  | |    | _ \ || | | |  _|    / _ \    | |\/| / -_) '  \/ _ \ '_| || |   | |__/ -_) _` | / /   | |\/| / _` / _| ' \| | ' \/ -_)
-  * |___|   |___/\_,_|_|_|\__|   /_/ \_\   |_|  |_\___|_|_|_\___/_|  \_, |   |____\___\__,_|_\_\   |_|  |_\__,_\__|_||_|_|_||_\___|
-  *                                                                  |__/                                                          
-  *
-  *  ___                _               _   _    _        ___         _            _   _           ___             _                ___ ___ _   _ 
-  * | _ \_  _ _ _  _ _ (_)_ _  __ _    | |_| |_ (_)___   |_ _|_ _  __| |_ __ _ _ _| |_| |_  _     / __|_ _ __ _ __| |_  ___ ___    / __| _ \ | | |
-  * |   / || | ' \| ' \| | ' \/ _` |   |  _| ' \| (_-<    | || ' \(_-<  _/ _` | ' \  _| | || |   | (__| '_/ _` (_-< ' \/ -_)_-<   | (_ |  _/ |_| |
-  * |_|_\\_,_|_||_|_||_|_|_||_\__, |    \__|_||_|_/__/   |___|_||_/__/\__\__,_|_||_\__|_|\_, |    \___|_| \__,_/__/_||_\___/__/    \___|_|  \___/ 
-  *                           |___/                                                      |__/                                                     
-  */
+//#define DEBUG
+//#define NUMNEUTRONSPEC
 
 
 #define CUDA_CHECK(call)                                                     \
@@ -50,6 +41,9 @@ __global__ void SingleCycle_Neutron(ReflectiveSlab* Slab3D, NeutronDistribution*
     int idx = threadIdx.x + blockIdx.x * blockDim.x;
     if (idx >= Neutrons->allocatableNeutronNum) { return; }
     GnuAMCM RNG(seedNo[idx]);
+
+    
+
     if (!Neutrons->neutrons[idx].isNullified()) {
         //if (Neutrons->neutrons[idx].status == true) { printf("neutron %d idx active\n", idx); }
         // run MC for neutrons
@@ -72,9 +66,10 @@ __global__ void SingleCycle_Neutron(ReflectiveSlab* Slab3D, NeutronDistribution*
 
             //if (true) {
             if (RType == ReactionType::capture) {
-                //printf("capture on idx %d\n", idx);
+                #ifdef DEBUG 
+                    printf("neutron capture on idx %d\n", idx); 
+                #endif
                 Slab3D->absorption(Neutrons->neutrons[idx]);
-                //printf("Im working!\n");
                 atomicAdd(&(Neutrons->neutronSize), -1);
             }
             else if (RType == ReactionType::scatter) {
@@ -82,26 +77,64 @@ __global__ void SingleCycle_Neutron(ReflectiveSlab* Slab3D, NeutronDistribution*
                 Neutrons->neutrons[idx].dirVec = vec3::randomUnit(RNG);
             }
             else {
-                //printf("fission on idx %d\n", idx);
-                Slab3D->fission(Neutrons->neutrons[idx], Neutrons, RNG, k_mult);
+                #ifdef DEBUG 
+                    printf("neutron fission on idx %d\n", idx);
+                #endif
+                
+                Slab3D->fission(Neutrons->neutrons[idx], Neutrons, RNG, k_mult, false);
             }
 
         }
         else {
-            int counter = 0;
-            Slab3D->reflection(Neutrons->neutrons[idx], mainNeutron_DTC, mainNeutron_DTS, dirNormal, RNG, counter);
+            Slab3D->reflection(Neutrons->neutrons[idx], mainNeutron_DTC, mainNeutron_DTS, dirNormal, RNG, idx);
             // 이새끼를 recursion으로 풀려고 하니까 ㅈㄹ났던거임 - 함수안에 for loop으로 바꿈
         }
     }
-    
+
+#ifdef DEBUG
+    Neutrons->neutrons[idx].printInfo_Kernel(idx);
+#endif
+
     seedNo[idx] = RNG.gen();
+}
+
+__global__ void printNeutronsInKernel(NeutronDistribution* Neutrons) {
+    int idx = threadIdx.x + blockIdx.x + blockDim.x;
+    if (idx >= Neutrons->allocatableNeutronNum) { return; }
+    Neutrons->neutrons[idx].printInfo_Kernel(idx);
+}
+
+__global__ void printAddedNeutronsInKernel(NeutronDistribution* Neutrons) {
+    int idx = threadIdx.x + blockIdx.x + blockDim.x;
+    if (idx >= Neutrons->allocatableNeutronNum) { return; }
+    Neutrons->addedNeutrons[idx].printInfo_Kernel(idx);
+}
+
+
+__global__ void addedNeutronPassResetter(NeutronDistribution* Neutrons) {
+    int idx = threadIdx.x + blockIdx.x * blockDim.x;
+    if (idx > Neutrons->allocatableNeutronNum) { return; }
+
+    if (!Neutrons->addedNeutrons[idx].isNullified()) {
+        Neutrons->addedNeutrons[idx].passFlag = false;
+    }
 }
 
 __global__ void SingleCycle_addedNeutron(ReflectiveSlab* Slab3D, NeutronDistribution* Neutrons, unsigned long long* seedNo, double* k_mult, int* fissionSIG) {
     int idx = threadIdx.x + blockIdx.x * blockDim.x;
     if (idx >= Neutrons->allocatableNeutronNum) { return; }
     GnuAMCM RNG(seedNo[idx]);
+
+    
+
     if (!Neutrons->addedNeutrons[idx].isNullified()) {
+        if (Neutrons->addedNeutrons[idx].passFlag) {
+#ifdef DEBUG
+            printf("idx %d passed because it passFlag was true\n", idx);
+#endif
+            Neutrons->addedNeutrons[idx].passFlag = false;
+            return;
+        }
         //if (true) {
         //printf("addedNeutron is working!\n");
         double addedNeutron_DTC = Slab3D->DTC(Neutrons->addedNeutrons[idx], RNG);
@@ -114,30 +147,36 @@ __global__ void SingleCycle_addedNeutron(ReflectiveSlab* Slab3D, NeutronDistribu
             if (addedNeutronRType == ReactionType::capture) {
                 //if (true) {
                 Slab3D->absorption(Neutrons->addedNeutrons[idx]);
-                printf(" absorption in addedNeutron idx %d\n", idx);
+#ifdef DEBUG
+                printf(" capture in addedNeutron idx %d\n", idx);
+#endif
                 atomicAdd(&(Neutrons->addedNeutronSize), -1);
             }
             else if (addedNeutronRType == ReactionType::scatter) {
                 Neutrons->addedNeutrons[idx].dirVec = vec3::randomUnit(RNG);
             }
             else {
+#ifdef DEBUG
+                printf("addedNeutron fission on idx %d\n", idx);
+#endif
                 *fissionSIG = 1;
-                Slab3D->fission(Neutrons->addedNeutrons[idx], Neutrons, RNG, k_mult);
+                Slab3D->fission(Neutrons->addedNeutrons[idx], Neutrons, RNG, k_mult, true);
             }
         }
         else {
-            int counter = 0;
-            Slab3D->reflection(Neutrons->addedNeutrons[idx], addedNeutron_DTC, addedNeutron_DTS, dirNormal, RNG, counter);
+            Slab3D->reflection(Neutrons->addedNeutrons[idx], addedNeutron_DTC, addedNeutron_DTS, dirNormal, RNG, idx);
         }
 
     }
-
+#ifdef DEBUG
+    Neutrons->addedNeutrons[idx].printInfo_Kernel(idx);
+#endif
     seedNo[idx] = RNG.gen();
 }
 
 
 
-
+/*
 // for now lets design our program to 
 __global__ void SingleCycle(ReflectiveSlab* Slab3D, NeutronDistribution* Neutrons, unsigned long long* seedNo, double* k_mult, int* fissionSIG) {
     int idx = threadIdx.x + blockIdx.x * blockDim.x;
@@ -171,7 +210,7 @@ __global__ void SingleCycle(ReflectiveSlab* Slab3D, NeutronDistribution* Neutron
             }
             else {
                 *fissionSIG = 1;
-                Slab3D->fission(Neutrons->addedNeutrons[idx], Neutrons, RNG, k_mult);
+                Slab3D->fission(Neutrons->addedNeutrons[idx], Neutrons, RNG, k_mult, false);
             }
         }
         else {
@@ -213,7 +252,7 @@ __global__ void SingleCycle(ReflectiveSlab* Slab3D, NeutronDistribution* Neutron
             }
             else {
                 //printf("fission on idx %d\n", idx);
-                Slab3D->fission(Neutrons->neutrons[idx], Neutrons, RNG, k_mult);
+                Slab3D->fission(Neutrons->neutrons[idx], Neutrons, RNG, k_mult, true);
             }
 
         }
@@ -228,13 +267,14 @@ __global__ void SingleCycle(ReflectiveSlab* Slab3D, NeutronDistribution* Neutron
     seedNo[idx] = RNG.gen();
 
 }
+*/
 
 
 int main() {
-    int initialNeutronNum = 1000;  
+    int initialNeutronNum = 100000;  
     //int excessNumNeutron = initialNumNeutrons * 1.5;
-    unsigned long long seedNo = 9223594239;
-    int numCycle = 100;
+    unsigned long long seedNo = 92235942397;
+    int numCycle = 510;
     int threadPerBlock = 32;
     int blockPerDim = (initialNeutronNum + threadPerBlock - 1) / threadPerBlock;
 
@@ -365,15 +405,27 @@ int main() {
     NeutronDistribution h_NeutronsReceiver = h_Neutrons;
     NeutronDistribution meta(h_NeutronsReceiver.allocatableNeutronNum, RNG.gen());
 
-    numCycle = 100;
+    std::vector<double> k_Tally;
+    //numCycle = 110;
     for (int i = 0; i < numCycle; i++) {
-        //std::cout << "Cycle " << i << "\n";
-        std::cout << "on the beginnig of the loop, previousGenNumNeutron: ";
+
         int previousGenNeutronNum = h_NeutronsReceiver.neutronSize + h_NeutronsReceiver.addedNeutronSize;
-        std::cout << previousGenNeutronNum << "\n";
-        
+#ifdef NUMNEUTRONSPEC
+        std::cout << "on the beginnig of the loop, previousGenNumNeutron: "
+        std::cout << previousGenNeutronNum;
+        std::cout << " --- each: NeutronSize: " << h_NeutronsReceiver.neutronSize << ", addedNeutronSize: " << h_NeutronsReceiver.addedNeutronSize << ", addindex: " << h_NeutronsReceiver.addedNeutronIndex << "\n";
+#endif
         //SingleCycle << <blockPerDim, threadPerBlock >> > (d_CubeSlab, d_Neutrons, d_SeedArr, d_multK, d_fissionSIG);
+#ifdef DEBUG
+        std::cout << "AddedNeutron's info:\n";
+#endif
         SingleCycle_addedNeutron << <blockPerDim, threadPerBlock >> > (d_CubeSlab, d_Neutrons, d_SeedArr, d_multK, d_fissionSIG);
+        CUDA_CHECK(cudaDeviceSynchronize());
+
+#ifdef DEBUG
+        std::cout << "\nNeutron's Info:\n";
+#endif
+        addedNeutronPassResetter << <blockPerDim, threadPerBlock >> > (d_Neutrons);
         CUDA_CHECK(cudaDeviceSynchronize());
         /*
         cudaMemcpy(&meta, d_Neutrons, sizeof(NeutronDistribution), cudaMemcpyDeviceToHost);
@@ -382,21 +434,10 @@ int main() {
         h_NeutronsReceiver.addedNeutronIndex = meta.addedNeutronIndex;
         std::cout << ", : neutron: " << h_NeutronsReceiver.neutronSize << " , addedNeutron: " << h_NeutronsReceiver.addedNeutronSize << " , addIndex: " << h_NeutronsReceiver.addedNeutronIndex << "\n";
         */
-
 
         SingleCycle_Neutron << <blockPerDim, threadPerBlock >> > (d_CubeSlab, d_Neutrons, d_SeedArr, d_multK, d_fissionSIG);
         CUDA_CHECK(cudaDeviceSynchronize());
-        /*
-        cudaMemcpy(&meta, d_Neutrons, sizeof(NeutronDistribution), cudaMemcpyDeviceToHost);
-        h_NeutronsReceiver.neutronSize = meta.neutronSize;
-        h_NeutronsReceiver.addedNeutronSize = meta.addedNeutronSize;
-        h_NeutronsReceiver.addedNeutronIndex = meta.addedNeutronIndex;
-        std::cout << ", : neutron: " << h_NeutronsReceiver.neutronSize << " , addedNeutron: " << h_NeutronsReceiver.addedNeutronSize << " , addIndex: " << h_NeutronsReceiver.addedNeutronIndex << "\n";
-        */
 
-        //test<< <blockPerDim, threadPerBlock >> > (d_CubeSlab, d_Neutrons, d_SeedArr, d_multK, d_fissionSIG);
-        //cudaDeviceSynchronize
-        
 
         cudaMemcpy(&h_mergeSignal, d_mergeSignal, sizeof(int), cudaMemcpyDeviceToHost);
         cudaMemcpy(&h_fissionSIG, d_fissionSIG, sizeof(int), cudaMemcpyDeviceToHost);
@@ -421,22 +462,11 @@ int main() {
         
 
 
-        int currentGenNeutronNum = h_NeutronsReceiver.neutronSize + h_NeutronsReceiver.addedNeutronSize;
-       
-       
-        h_multK = h_multK * static_cast<double>(currentGenNeutronNum) / static_cast<double>(previousGenNeutronNum);
-        //h_multK = 1;
-        cudaMemcpy(d_multK, &h_multK, sizeof(double), cudaMemcpyDeviceToHost);
 
-
-
-        std::cout << "Loop " << i;
-        std::cout << ", : neutron: " << h_NeutronsReceiver.neutronSize << " , addedNeutron: " << h_NeutronsReceiver.addedNeutronSize << " , addIndex: " << h_NeutronsReceiver.addedNeutronIndex << "\n";
-        std::cout << "total Neutron : " << currentGenNeutronNum << ", multiplication factor k: " << h_multK << "\n\n";
 
         
 
-        if (static_cast<double>(h_NeutronsReceiver.addedNeutronIndex) > 0.9 * static_cast<double>(h_Neutrons.allocatableNeutronNum)) {
+        if (static_cast<double>(h_NeutronsReceiver.addedNeutronIndex) > 0.8 * static_cast<double>(h_Neutrons.allocatableNeutronNum)) {
             std::cout << "addIndex almost full - sorting and merging neutrons...\n";
 
             
@@ -445,12 +475,16 @@ int main() {
 
             
             
-            
+            /*
             CUDA_CHECK(cudaMemcpy(&meta, d_Neutrons, sizeof(NeutronDistribution), cudaMemcpyDeviceToHost));
+
             h_NeutronsReceiver.neutronSize = meta.neutronSize;
             h_NeutronsReceiver.addedNeutronSize = meta.addedNeutronSize;
             h_NeutronsReceiver.addedNeutronIndex = meta.addedNeutronIndex;
-
+            */
+#ifdef NUMNEUTRONSPEC
+            std::cout << "Data from meta struct: " << h_NeutronsReceiver.neutronSize << ", " << h_NeutronsReceiver.addedNeutronSize << ", " << h_NeutronsReceiver.addedNeutronIndex << "\n";
+#endif
             // first copy the device array to host
             cudaMemcpy(h_NeutronsReceiver.neutrons, d_bufferNeutrons, h_Neutrons.allocatableNeutronNum * sizeof(Neutron), cudaMemcpyDeviceToHost);
             cudaMemcpy(h_NeutronsReceiver.addedNeutrons, d_bufferAddedNeutrons, h_Neutrons.allocatableNeutronNum * sizeof(Neutron), cudaMemcpyDeviceToHost);
@@ -462,17 +496,25 @@ int main() {
 
             
             for (int j = 0; j < h_NeutronsReceiver.allocatableNeutronNum; j++) {
+#ifdef DEBUG
                 std::cout << "idx" << j << ", info: ";
                 h_NeutronsReceiver.neutrons[j].printInfo();
+#endif
                 if (!h_NeutronsReceiver.neutrons[j].isNullified()) {
+                    h_NeutronsReceiver.neutrons[j].passFlag = false;
                     NeutronContainer.push_back(h_NeutronsReceiver.neutrons[j]);
+                    
                 }
             }
             for (int j = 0; j < h_NeutronsReceiver.allocatableNeutronNum; j++) {
+#ifdef DEBUG
                 std::cout << "idx" << j << ", info: ";
                 h_NeutronsReceiver.addedNeutrons[j].printInfo();
+#endif
                 if (!h_NeutronsReceiver.addedNeutrons[j].isNullified()) {
+                    h_NeutronsReceiver.addedNeutrons[j].passFlag = false;
                     NeutronContainer.push_back(h_NeutronsReceiver.addedNeutrons[j]);
+
                 }
             }
 
@@ -489,11 +531,14 @@ int main() {
             h_MergedNeutrons.neutronSize = h_Neutrons.allocatableNeutronNum; // assume neutron will be full
             h_MergedNeutrons.addedNeutronSize = NeutronContainer.size() - h_Neutrons.allocatableNeutronNum;
             h_MergedNeutrons.addedNeutronIndex = h_MergedNeutrons.addedNeutronSize;
-            std::cout << "Neutron vector size: " << NeutronContainer.size() << "\n";
+            std::cout << "Neutron vector size: " << NeutronContainer.size() << ". ";
             // push back the neutrons to idx
 
-
+            h_NeutronsReceiver.neutronSize = h_Neutrons.allocatableNeutronNum; // assume neutron will be full
+            h_NeutronsReceiver.addedNeutronSize = NeutronContainer.size() - h_Neutrons.allocatableNeutronNum;
+            h_NeutronsReceiver.addedNeutronIndex = h_Neutrons.addedNeutronSize;
             
+            std::cout << "Assigning the neutrons to the host merge array:\n";
             
             if (NeutronContainer.size() < h_Neutrons.allocatableNeutronNum) {
                 for (int j = 0; j < h_Neutrons.allocatableNeutronNum; j++) { // error in this line
@@ -503,27 +548,71 @@ int main() {
             else {
                 for (int j = 0; j < h_Neutrons.allocatableNeutronNum; j++) { // error in this line
                     h_MergedNeutrons.neutrons[j] = NeutronContainer[j];
+#ifdef DEBUG
+                    std::cout << "neutrons idx " << j << " : ";
+                    h_MergedNeutrons.neutrons[j].printInfo();
+#endif
                 }
                 for (int j = 0; j < h_Neutrons.addedNeutronSize; j++) {
                     h_MergedNeutrons.addedNeutrons[j] = NeutronContainer[h_Neutrons.neutronSize + j];
+#ifdef DEBUG
+                    std::cout << "addedNeutrons idx " << j << " : ";
+                    h_MergedNeutrons.addedNeutrons[j].printInfo();
+#endif
                 }
             }
 
+            
+            
 
-            cudaMemcpy(d_Neutrons, &h_MergedNeutrons, sizeof(NeutronDistribution), cudaMemcpyHostToDevice);
+            
             cudaMemcpy(d_bufferNeutrons, h_MergedNeutrons.neutrons, h_MergedNeutrons.allocatableNeutronNum * sizeof(Neutron), cudaMemcpyHostToDevice);
             cudaMemcpy(d_bufferAddedNeutrons, h_MergedNeutrons.addedNeutrons, h_MergedNeutrons.allocatableNeutronNum * sizeof(Neutron), cudaMemcpyHostToDevice);
+
+            h_MergedNeutrons.neutrons = d_bufferNeutrons;
+            h_MergedNeutrons.addedNeutrons = d_bufferAddedNeutrons;
+
+
+            cudaMemcpy(d_Neutrons, &h_MergedNeutrons, sizeof(NeutronDistribution), cudaMemcpyHostToDevice);
             // this is enough -> tmp_Neutrons already have address for d_bufferNeutrons arrays, and it points to the d_Neutorns anyways.
 
-            std::cout << "Neutron size after merging: for main neutron array: " << h_Neutrons.neutronSize << ", for added: " << h_Neutrons.addedNeutronSize << "\n";
+            std::cout << "Neutron size after merging: for main neutron array: " << h_NeutronsReceiver.neutronSize << ", for added: " << h_Neutrons.addedNeutronSize << "\n";
             
 
         }
-        
 
+
+
+        int currentGenNeutronNum = h_NeutronsReceiver.neutronSize + h_NeutronsReceiver.addedNeutronSize;
+
+        h_multK = h_multK * static_cast<double>(currentGenNeutronNum) / static_cast<double>(previousGenNeutronNum);
+        //h_multK = 1;
+        cudaMemcpy(d_multK, &h_multK, sizeof(double), cudaMemcpyHostToDevice);
+
+        std::cout << "Loop " << i;
+#ifdef NUMNEUTRONSPEC
+        std::cout << ": after Kernel";
+        std::cout << ", : neutron: " << h_NeutronsReceiver.neutronSize << " , addedNeutron: " << h_NeutronsReceiver.addedNeutronSize << " , addIndex: " << h_NeutronsReceiver.addedNeutronIndex << "\n";
+#endif
+        std::cout << " total Neutron : " << currentGenNeutronNum << ", multiplication factor k: " << std::fixed << std::setprecision(6) << h_multK << "\n";
+        if (i > 9) {
+            k_Tally.push_back(h_multK);
+        }
     }
 
-    
+    double avg = 0.0;
+    double stdev = 0.0;
+    for (int i = 0; i < numCycle-10; i++) {
+        avg += k_Tally[i];
+    }
+    avg /= (numCycle - 10);
+
+    for (int i = 0; i < numCycle-10; i++) {
+        stdev += std::pow((k_Tally[i] - avg), 2);
+    }
+    stdev /= (numCycle - 10);
+
+    std::cout << avg << " pm " << stdev << "\n";
 
 
 
