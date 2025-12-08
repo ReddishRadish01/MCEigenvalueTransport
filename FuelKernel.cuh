@@ -66,7 +66,7 @@ struct ReflectiveSlab {
 
 	__host__ __device__ 
 	bool inline outOfRange(vec3 pos) const {
-		if (pos.x < 0.0 || pos.x > D_x || pos.y < 0.0 || pos.y > D_y || pos.z < 0.0 || pos.z > D_z) { return true; }
+		if (pos.x < 0 || pos.x > D_x || pos.y < 0 || pos.y > D_y || pos.z < 0 || pos.z > D_z) { return true; }
 		else { return false; }
 	}
 

@@ -11,12 +11,9 @@
 #include "RNG.cuh"
 #include "Neutron.cuh"
 #include "FuelKernel.cuh"
-#include "Tally.cuh"
 
 //#define DEBUG
-//#define OUTOFINDEXDEBUG
 //#define NUMNEUTRONSPEC
-#define TALLY
 
 
 #define CUDA_CHECK(call)                                                     \
@@ -47,7 +44,7 @@ __global__ void SingleCycle_Neutron(ReflectiveSlab* Slab3D, NeutronDistribution*
 
     
 
-    if (!Neutrons->neutrons[idx].isNullified() && !Slab3D->outOfRange(Neutrons->neutrons[idx]) ) {
+    if (!Neutrons->neutrons[idx].isNullified()) {
         //if (Neutrons->neutrons[idx].status == true) { printf("neutron %d idx active\n", idx); }
         // run MC for neutrons
         double mainNeutron_DTC = Slab3D->DTC(Neutrons->neutrons[idx], RNG);
@@ -93,13 +90,24 @@ __global__ void SingleCycle_Neutron(ReflectiveSlab* Slab3D, NeutronDistribution*
             // 이새끼를 recursion으로 풀려고 하니까 ㅈㄹ났던거임 - 함수안에 for loop으로 바꿈
         }
     }
-    else { Neutrons->neutrons[idx].Nullify(); }
 
 #ifdef DEBUG
     Neutrons->neutrons[idx].printInfo_Kernel(idx);
 #endif
 
     seedNo[idx] = RNG.gen();
+}
+
+__global__ void printNeutronsInKernel(NeutronDistribution* Neutrons) {
+    int idx = threadIdx.x + blockIdx.x + blockDim.x;
+    if (idx >= Neutrons->allocatableNeutronNum) { return; }
+    Neutrons->neutrons[idx].printInfo_Kernel(idx);
+}
+
+__global__ void printAddedNeutronsInKernel(NeutronDistribution* Neutrons) {
+    int idx = threadIdx.x + blockIdx.x + blockDim.x;
+    if (idx >= Neutrons->allocatableNeutronNum) { return; }
+    Neutrons->addedNeutrons[idx].printInfo_Kernel(idx);
 }
 
 
@@ -117,7 +125,9 @@ __global__ void SingleCycle_addedNeutron(ReflectiveSlab* Slab3D, NeutronDistribu
     if (idx >= Neutrons->allocatableNeutronNum) { return; }
     GnuAMCM RNG(seedNo[idx]);
 
-    if (!Neutrons->addedNeutrons[idx].isNullified() && !Slab3D->outOfRange(Neutrons->addedNeutrons[idx]) ) {
+    
+
+    if (!Neutrons->addedNeutrons[idx].isNullified()) {
         if (Neutrons->addedNeutrons[idx].passFlag) {
 #ifdef DEBUG
             printf("idx %d passed because it passFlag was true\n", idx);
@@ -158,9 +168,6 @@ __global__ void SingleCycle_addedNeutron(ReflectiveSlab* Slab3D, NeutronDistribu
         }
 
     }
-    else { Neutrons->addedNeutrons[idx].Nullify(); }
-
-
 #ifdef DEBUG
     Neutrons->addedNeutrons[idx].printInfo_Kernel(idx);
 #endif
@@ -264,10 +271,10 @@ __global__ void SingleCycle(ReflectiveSlab* Slab3D, NeutronDistribution* Neutron
 
 
 int main() {
-    int initialNeutronNum = 100000;  
+    int initialNeutronNum = 500000;  
     //int excessNumNeutron = initialNumNeutrons * 1.5;
     unsigned long long seedNo = 92235942397;
-    int numCycle = 110;
+    int numCycle = 510;
     int initialOffset = 20;
     int threadPerBlock = 32;
     int blockPerDim = (initialNeutronNum + threadPerBlock - 1) / threadPerBlock;
@@ -461,6 +468,20 @@ int main() {
         if (static_cast<double>(h_NeutronsReceiver.addedNeutronIndex) > 0.8 * static_cast<double>(h_Neutrons.allocatableNeutronNum)) {
             std::cout << "addIndex almost full - sorting and merging neutrons...\n";
 
+            
+
+            //cudaMemcpy(&h_NeutronsReceiver, d_Neutrons, sizeof(NeutronDistribution), cudaMemcpyDeviceToHost);
+
+            
+            
+            /*
+            CUDA_CHECK(cudaMemcpy(&meta, d_Neutrons, sizeof(NeutronDistribution), cudaMemcpyDeviceToHost));
+
+            h_NeutronsReceiver.neutronSize = meta.neutronSize;
+            h_NeutronsReceiver.addedNeutronSize = meta.addedNeutronSize;
+            h_NeutronsReceiver.addedNeutronIndex = meta.addedNeutronIndex;
+            */
+
             std::cout << "Data from meta struct: " << h_NeutronsReceiver.neutronSize << ", " << h_NeutronsReceiver.addedNeutronSize << ", " << h_NeutronsReceiver.addedNeutronIndex << "\n";
 
             // first copy the device array to host
@@ -477,33 +498,22 @@ int main() {
                 std::cout << "idx" << j << ", info: ";
                 h_NeutronsReceiver.neutrons[j].printInfo();
 #endif
-                if (!h_NeutronsReceiver.neutrons[j].isNullified() && !h_CubeSlab.outOfRange(h_NeutronsReceiver.neutrons[i])  ) {
+                if (!h_NeutronsReceiver.neutrons[j].isNullified()) {
                     h_NeutronsReceiver.neutrons[j].passFlag = false;
                     NeutronContainer.push_back(h_NeutronsReceiver.neutrons[j]);
+                    
                 }
-#ifdef OUTOFINDEXDEBUG
-                else {
-                    std::cout << "Bad Pos at neutron idx " << j << ", info: ";
-                    h_NeutronsReceiver.neutrons[j].printInfo();
-                }
-#endif
             }
             for (int j = 0; j < h_NeutronsReceiver.allocatableNeutronNum; j++) {
 #ifdef DEBUG
                 std::cout << "idx" << j << ", info: ";
                 h_NeutronsReceiver.addedNeutrons[j].printInfo();
 #endif
-
-                if (!h_NeutronsReceiver.addedNeutrons[j].isNullified() && !h_CubeSlab.outOfRange(h_NeutronsReceiver.addedNeutrons[i])  ) {
+                if (!h_NeutronsReceiver.addedNeutrons[j].isNullified()) {
                     h_NeutronsReceiver.addedNeutrons[j].passFlag = false;
                     NeutronContainer.push_back(h_NeutronsReceiver.addedNeutrons[j]);
+
                 }
-#ifdef OUTOFINDEXDEBUG
-                else {
-                    std::cout << "Bad Pos at addedNeutron idx " << j << ", info: "; 
-                    h_NeutronsReceiver.addedNeutrons[j].printInfo();
-                }
-#endif
             }
 
             // Allocate a new struct for merging
@@ -554,11 +564,6 @@ int main() {
 #endif
                 }
             }
-
-            // bro you have to place this before you make h_MergedNeutrons a tmp struct for device sturct
-#ifdef TALLY
-            Tally::fluxTally2D_host(h_MergedNeutrons, h_CubeSlab, 10, i);
-#endif
             
             cudaMemcpy(d_bufferNeutrons, h_MergedNeutrons.neutrons, h_MergedNeutrons.allocatableNeutronNum * sizeof(Neutron), cudaMemcpyHostToDevice);
             cudaMemcpy(d_bufferAddedNeutrons, h_MergedNeutrons.addedNeutrons, h_MergedNeutrons.allocatableNeutronNum * sizeof(Neutron), cudaMemcpyHostToDevice);
@@ -572,8 +577,6 @@ int main() {
 
             std::cout << "Neutron size after merging: for main neutron array: " << h_Neutrons.neutronSize << ", for added: " << h_Neutrons.addedNeutronSize << "\n";
             
-
-
 
         }
 
@@ -595,12 +598,6 @@ int main() {
         if (i >= initialOffset) {
             k_Tally.push_back(h_multK);
         }
-
-#ifdef TALLY
-        if (i == 0) {
-            Tally::fluxTally2D_host(h_Neutrons, h_CubeSlab, 10, i);
-        }
-#endif
     }
 
     double avg = 0.0;
