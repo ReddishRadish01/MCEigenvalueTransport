@@ -37,7 +37,7 @@ __global__ void ReadCounters(NeutronDistribution* Neutrons, int* out) {
 }
 
 
-__global__ void SingleCycle_Neutron(ReflectiveSlab* Slab3D, NeutronDistribution* Neutrons, unsigned long long* seedNo, double* k_mult, int* fissionSIG) {
+__global__ void SingleCycle_Neutron(ReflectiveSlab* Slab3D, NeutronDistribution* Neutrons, unsigned long long* seedNo, double* k_mult, int* fissionSIG, int* fisNum) {
     int idx = threadIdx.x + blockIdx.x * blockDim.x;
     if (idx >= Neutrons->allocatableNeutronNum) { return; }
     GnuAMCM RNG(seedNo[idx]);
@@ -81,7 +81,7 @@ __global__ void SingleCycle_Neutron(ReflectiveSlab* Slab3D, NeutronDistribution*
                     printf("neutron fission on idx %d\n", idx);
                 #endif
                 
-                Slab3D->fission(Neutrons->neutrons[idx], Neutrons, RNG, k_mult, false);
+                Slab3D->fission(Neutrons->neutrons[idx], Neutrons, RNG, k_mult, false, fisNum);
             }
 
         }
@@ -120,7 +120,7 @@ __global__ void addedNeutronPassResetter(NeutronDistribution* Neutrons) {
     }
 }
 
-__global__ void SingleCycle_addedNeutron(ReflectiveSlab* Slab3D, NeutronDistribution* Neutrons, unsigned long long* seedNo, double* k_mult, int* fissionSIG) {
+__global__ void SingleCycle_addedNeutron(ReflectiveSlab* Slab3D, NeutronDistribution* Neutrons, unsigned long long* seedNo, double* k_mult, int* fissionSIG, int* fisNum) {
     int idx = threadIdx.x + blockIdx.x * blockDim.x;
     if (idx >= Neutrons->allocatableNeutronNum) { return; }
     GnuAMCM RNG(seedNo[idx]);
@@ -160,7 +160,7 @@ __global__ void SingleCycle_addedNeutron(ReflectiveSlab* Slab3D, NeutronDistribu
                 printf("addedNeutron fission on idx %d\n", idx);
 #endif
                 *fissionSIG = 1;
-                Slab3D->fission(Neutrons->addedNeutrons[idx], Neutrons, RNG, k_mult, true);
+                Slab3D->fission(Neutrons->addedNeutrons[idx], Neutrons, RNG, k_mult, true, fisNum);
             }
         }
         else {
@@ -373,7 +373,6 @@ int main() {
     cudaMalloc(&d_mergeSignal, sizeof(int));
     cudaMemcpy(d_mergeSignal, &h_mergeSignal, sizeof(int), cudaMemcpyHostToDevice);
     
-
     int h_fissionSIG = 0;
     int* d_fissionSIG = nullptr;
     cudaMalloc(&d_fissionSIG, sizeof(int));
@@ -388,26 +387,31 @@ int main() {
       */
 
     // Currently its a 3d CUBE, 
-    ReflectiveSlab h_CubeSlab(0.02, 0.02, 0.02, 0.2, 1.5, 0.3, 2.0);
+    // parametrs:             x,    y,    z,    XS_c,XS_s,XS_f,nu
+    ReflectiveSlab h_CubeSlab(0.02, 0.02, 0.02, 0.2, 1.5, 0.4, 2.0); 
     ReflectiveSlab* d_CubeSlab = nullptr;
     cudaMalloc(&d_CubeSlab, sizeof(ReflectiveSlab));
     cudaMemcpy(d_CubeSlab, &h_CubeSlab, sizeof(ReflectiveSlab), cudaMemcpyHostToDevice);
 
-    double h_multK = 1.0;
+
+    NeutronDistribution h_NeutronsReceiver = h_Neutrons;
+    NeutronDistribution meta(h_NeutronsReceiver.allocatableNeutronNum, RNG.gen());
+    int h_fissionSourceNum = initialNeutronNum;
+    int* d_fissionSourceNum = nullptr;
+    cudaMalloc(&d_fissionSourceNum, sizeof(int));
+    cudaMemcpy(d_fissionSourceNum, &h_fissionSourceNum, sizeof(int), cudaMemcpyHostToDevice);
+
+    double h_multK = 1.2;
     double* d_multK = nullptr;
     cudaMalloc(&d_multK, sizeof(double));
     cudaMemcpy(d_multK, &h_multK, sizeof(double), cudaMemcpyHostToDevice);
 
-    //std::vector<double> DTCArray(excessNumNeutron, 0.0);
-
-    //NeutronDistribution h_NeutronsReceiver(initialNeutronNum, 1);
-    NeutronDistribution h_NeutronsReceiver = h_Neutrons;
-    NeutronDistribution meta(h_NeutronsReceiver.allocatableNeutronNum, RNG.gen());
-
     std::vector<double> k_Tally;
-    numCycle = 110;
-    for (int i = 0; i < numCycle; i++) {
+    //numCycle = 110;
 
+
+    for (int i = 0; i < numCycle; i++) {
+        int previousFissionSourceNum = h_fissionSourceNum;
         int previousGenNeutronNum = h_NeutronsReceiver.neutronSize + h_NeutronsReceiver.addedNeutronSize;
 #ifdef NUMNEUTRONSPEC
         std::cout << "on the beginnig of the loop, previousGenNumNeutron: "
@@ -418,7 +422,7 @@ int main() {
 #ifdef DEBUG
         std::cout << "AddedNeutron's info:\n";
 #endif
-        SingleCycle_addedNeutron << <blockPerDim, threadPerBlock >> > (d_CubeSlab, d_Neutrons, d_SeedArr, d_multK, d_fissionSIG);
+        SingleCycle_addedNeutron << <blockPerDim, threadPerBlock >> > (d_CubeSlab, d_Neutrons, d_SeedArr, d_multK, d_fissionSIG, d_fissionSourceNum);
         CUDA_CHECK(cudaDeviceSynchronize());
 
 #ifdef DEBUG
@@ -426,15 +430,9 @@ int main() {
 #endif
         addedNeutronPassResetter << <blockPerDim, threadPerBlock >> > (d_Neutrons);
         CUDA_CHECK(cudaDeviceSynchronize());
-        /*
-        cudaMemcpy(&meta, d_Neutrons, sizeof(NeutronDistribution), cudaMemcpyDeviceToHost);
-        h_NeutronsReceiver.neutronSize = meta.neutronSize;
-        h_NeutronsReceiver.addedNeutronSize = meta.addedNeutronSize;
-        h_NeutronsReceiver.addedNeutronIndex = meta.addedNeutronIndex;
-        std::cout << ", : neutron: " << h_NeutronsReceiver.neutronSize << " , addedNeutron: " << h_NeutronsReceiver.addedNeutronSize << " , addIndex: " << h_NeutronsReceiver.addedNeutronIndex << "\n";
-        */
+        
 
-        SingleCycle_Neutron << <blockPerDim, threadPerBlock >> > (d_CubeSlab, d_Neutrons, d_SeedArr, d_multK, d_fissionSIG);
+        SingleCycle_Neutron << <blockPerDim, threadPerBlock >> > (d_CubeSlab, d_Neutrons, d_SeedArr, d_multK, d_fissionSIG, d_fissionSourceNum);
         CUDA_CHECK(cudaDeviceSynchronize());
 
 
@@ -481,9 +479,9 @@ int main() {
             h_NeutronsReceiver.addedNeutronSize = meta.addedNeutronSize;
             h_NeutronsReceiver.addedNeutronIndex = meta.addedNeutronIndex;
             */
-
+#ifdef NUMNEUTRONSPEC
             std::cout << "Data from meta struct: " << h_NeutronsReceiver.neutronSize << ", " << h_NeutronsReceiver.addedNeutronSize << ", " << h_NeutronsReceiver.addedNeutronIndex << "\n";
-
+#endif
             // first copy the device array to host
             cudaMemcpy(h_NeutronsReceiver.neutrons, d_bufferNeutrons, h_Neutrons.allocatableNeutronNum * sizeof(Neutron), cudaMemcpyDeviceToHost);
             cudaMemcpy(h_NeutronsReceiver.addedNeutrons, d_bufferAddedNeutrons, h_Neutrons.allocatableNeutronNum * sizeof(Neutron), cudaMemcpyDeviceToHost);
@@ -492,7 +490,8 @@ int main() {
 
 
             std::vector<Neutron> NeutronContainer;
-           
+
+            
             for (int j = 0; j < h_NeutronsReceiver.allocatableNeutronNum; j++) {
 #ifdef DEBUG
                 std::cout << "idx" << j << ", info: ";
@@ -515,6 +514,8 @@ int main() {
 
                 }
             }
+
+            
 
             // Allocate a new struct for merging
             NeutronDistribution h_MergedNeutrons(h_Neutrons.allocatableNeutronNum, 1);
@@ -564,6 +565,10 @@ int main() {
 #endif
                 }
             }
+
+            
+            
+
             
             cudaMemcpy(d_bufferNeutrons, h_MergedNeutrons.neutrons, h_MergedNeutrons.allocatableNeutronNum * sizeof(Neutron), cudaMemcpyHostToDevice);
             cudaMemcpy(d_bufferAddedNeutrons, h_MergedNeutrons.addedNeutrons, h_MergedNeutrons.allocatableNeutronNum * sizeof(Neutron), cudaMemcpyHostToDevice);
@@ -575,17 +580,23 @@ int main() {
             cudaMemcpy(d_Neutrons, &h_MergedNeutrons, sizeof(NeutronDistribution), cudaMemcpyHostToDevice);
             // this is enough -> tmp_Neutrons already have address for d_bufferNeutrons arrays, and it points to the d_Neutorns anyways.
 
-            std::cout << "Neutron size after merging: for main neutron array: " << h_Neutrons.neutronSize << ", for added: " << h_Neutrons.addedNeutronSize << "\n";
+            std::cout << "Neutron size after merging: for main neutron array: " << h_NeutronsReceiver.neutronSize << ", for added: " << h_Neutrons.addedNeutronSize << "\n";
             
 
         }
 
+        cudaMemcpy(&h_fissionSourceNum, d_fissionSourceNum, sizeof(int), cudaMemcpyDeviceToHost);
 
+        int nextFissionSourceNum = h_fissionSourceNum;
 
         int currentGenNeutronNum = h_NeutronsReceiver.neutronSize + h_NeutronsReceiver.addedNeutronSize;
 
-        h_multK = h_multK * static_cast<double>(currentGenNeutronNum) / static_cast<double>(previousGenNeutronNum);
-        //h_multK = 1;
+        //h_multK *= static_cast<double>(currentGenNeutronNum) / static_cast<double>(previousGenNeutronNum);
+
+        h_multK = static_cast<double>(nextFissionSourceNum) / static_cast<double>(previousFissionSourceNum);
+
+        //h_multK = static_cast<double>(currentGenNeutronNum) / static_cast<double>(previousGenNeutronNum);
+
         cudaMemcpy(d_multK, &h_multK, sizeof(double), cudaMemcpyHostToDevice);
 
         std::cout << "Loop " << i;
@@ -593,8 +604,8 @@ int main() {
         std::cout << ": after Kernel";
         std::cout << ", : neutron: " << h_NeutronsReceiver.neutronSize << " , addedNeutron: " << h_NeutronsReceiver.addedNeutronSize << " , addIndex: " << h_NeutronsReceiver.addedNeutronIndex << "\n";
 #endif
-        std::cout << " total Neutron : " << currentGenNeutronNum << ", multiplication factor k: " << std::fixed << std::setprecision(6) << h_multK << "\n\n";
-
+        std::cout << " total Neutron : " << currentGenNeutronNum << ", multiplication factor k: " << std::fixed << std::setprecision(6) << h_multK << "\n";
+        std::cout << "fission neutron number was: " << nextFissionSourceNum << "\n";
         if (i >= initialOffset) {
             k_Tally.push_back(h_multK);
         }

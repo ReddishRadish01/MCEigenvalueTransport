@@ -168,9 +168,12 @@ void ReflectiveSlab::absorption(Neutron& incidentNeutron) {
 
 // the fucking concurrency man --------- FUCKKKKKKKK!!!!!!!!!!!!!!!!
 __device__
-void ReflectiveSlab::fission(Neutron& incidentNeutron, NeutronDistribution* Neutrons, GnuAMCM& RNG, double* k, bool passFlag) {
+//void ReflectiveSlab::fission(Neutron& incidentNeutron, NeutronDistribution* Neutrons, GnuAMCM& RNG, double* k, bool passFlag, int* fisNum) {
+void ReflectiveSlab::fission(Neutron & incidentNeutron, NeutronDistribution * Neutrons, GnuAMCM & RNG, double* k, bool passFlag) {
 	double rngNo = RNG.uniform(0.0, 1.0);
 	int fissionNum = int(this->nu / *k + rngNo);
+	//atomicAdd(fisNum, fissionNum);
+	//int fissionNum = int(this->nu + rngNo);
 #ifdef DEBUG
 	printf("nu: %f, k: %f, rngNo: %f, therefore fission neutron number: %d\n", this->nu, *k, rngNo, fissionNum);
 #endif

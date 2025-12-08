@@ -88,6 +88,7 @@ struct ReflectiveSlab {
 
 	__host__ __device__ void absorption(Neutron& incidentNeutron);
 
+	//__device__ void fission(Neutron& incidentNeutron, NeutronDistribution* Neutrons, GnuAMCM& RNG, double* k, bool passFlag, int* fisNum);
 	__device__ void fission(Neutron& incidentNeutron, NeutronDistribution* Neutrons, GnuAMCM& RNG, double* k, bool passFlag);
 
 	__host__ __device__ double calculate_k(NeutronDistribution& Neutrons, int& previousCount);
