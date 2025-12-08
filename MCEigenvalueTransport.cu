@@ -17,6 +17,7 @@
 //#define OUTOFINDEXDEBUG
 //#define NUMNEUTRONSPEC
 #define TALLY
+//#define TALLYFETCHALL
 
 
 #define CUDA_CHECK(call)                                                     \
@@ -264,7 +265,7 @@ __global__ void SingleCycle(ReflectiveSlab* Slab3D, NeutronDistribution* Neutron
 
 
 int main() {
-    int initialNeutronNum = 100000;  
+    int initialNeutronNum = 500000;  
     //int excessNumNeutron = initialNumNeutrons * 1.5;
     unsigned long long seedNo = 92235942397;
     int numCycle = 110;
@@ -456,9 +457,11 @@ int main() {
 
 
 
-        
-
+#ifdef TALLYFETCHALL
+        if (true) {
+#else
         if (static_cast<double>(h_NeutronsReceiver.addedNeutronIndex) > 0.8 * static_cast<double>(h_Neutrons.allocatableNeutronNum)) {
+#endif
             std::cout << "addIndex almost full - sorting and merging neutrons...\n";
 
             std::cout << "Data from meta struct: " << h_NeutronsReceiver.neutronSize << ", " << h_NeutronsReceiver.addedNeutronSize << ", " << h_NeutronsReceiver.addedNeutronIndex << "\n";
