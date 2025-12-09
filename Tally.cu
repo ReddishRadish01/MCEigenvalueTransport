@@ -12,7 +12,7 @@
 //#define TALLYDEBUG
 
 __host__
-void Tally::fluxTally2D_host(NeutronDistribution Neutrons, ReflectiveSlab Slab3D, int numRegionsPerSide, int loopIdx) {
+void Tally::fluxTally2D_host(NeutronDistribution Neutrons, ReflectiveSlab Slab3D, int numRegionsPerSide, int loopIdx, double multK) {
 	std::cout << "Flux tally for " << loopIdx << "th Cycle\n";
 	int totalNeutronNum = Neutrons.neutronSize + Neutrons.addedNeutronSize;
 	double widthPerCell = Slab3D.D_x / numRegionsPerSide;
@@ -55,6 +55,8 @@ void Tally::fluxTally2D_host(NeutronDistribution Neutrons, ReflectiveSlab Slab3D
 	std::string filename = "output/Loop_" + std::to_string(loopIdx) + "_fluxTally.txt";
 	outFile.open(filename);
 	
+	outFile << multK << "\n";
+
 	for (int i = 0; i < lengthCellCount; i++) {
 		for (int j = 0; j < numRegionsPerSide; j++) {
 			outFile << populationArr[j][i] << "  ";

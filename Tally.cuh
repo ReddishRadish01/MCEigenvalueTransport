@@ -19,7 +19,7 @@ struct Tally {
 	~Tally() {}
 
 	__host__
-	static void fluxTally2D_host(NeutronDistribution Neutrons, ReflectiveSlab Slab3D, int numRegionsPerSide, int loopIdx);
+	static void fluxTally2D_host(NeutronDistribution Neutrons, ReflectiveSlab Slab3D, int numRegionsPerSide, int loopIdx, double multK);
 
 	__host__
 	static void fluxTally2D_host_HeightSpecific(NeutronDistribution Neutrons, ReflectiveSlab Slab3D, int numRegionsPerSide, double height);

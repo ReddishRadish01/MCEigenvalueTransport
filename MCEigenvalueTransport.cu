@@ -17,7 +17,7 @@
 //#define OUTOFINDEXDEBUG
 //#define NUMNEUTRONSPEC
 #define TALLY
-//#define TALLYFETCHALL
+#define TALLYFETCHALL
 
 
 #define CUDA_CHECK(call)                                                     \
@@ -439,24 +439,14 @@ int main() {
         //}
         
 
-
         //std::cout << "copying device structs to host...\n";
         cudaMemcpy(&meta, d_Neutrons, sizeof(NeutronDistribution), cudaMemcpyDeviceToHost);
         h_NeutronsReceiver.neutronSize = meta.neutronSize;
         h_NeutronsReceiver.addedNeutronSize = meta.addedNeutronSize;
         h_NeutronsReceiver.addedNeutronIndex = meta.addedNeutronIndex;
 
-        //h_Neutrons.neutronSize = h_NeutronsReceiver.neutronSize;
-        //cudaMemcpy(h_NeutronsReceiver.neutrons, d_bufferNeutrons, h_Neutrons.allocatableNeutronNum * sizeof(Neutron), cudaMemcpyDeviceToHost);
-        //cudaMemcpy(h_NeutronsReceiver.addedNeutrons, d_bufferAddedNeutrons, h_Neutrons.allocatableNeutronNum * sizeof(Neutron), cudaMemcpyDeviceToHost);
-        //std::cout << "copying ended!\n";
 
-        //cudaMemcpy(&h_Neutrons, d_Neutrons, sizeof(NeutronDistribution), cudaMemcpyDeviceToHost); // will this just copy the plain values ?
-        
-
-
-
-
+        // enable this "TALLYFETCHALL" in order to fetch every distribution. 
 #ifdef TALLYFETCHALL
         if (true) {
 #else
@@ -560,7 +550,7 @@ int main() {
 
             // bro you have to place this before you make h_MergedNeutrons a tmp struct for device sturct
 #ifdef TALLY
-            Tally::fluxTally2D_host(h_MergedNeutrons, h_CubeSlab, 10, i);
+            Tally::fluxTally2D_host(h_MergedNeutrons, h_CubeSlab, 20, i, h_multK);
 #endif
             
             cudaMemcpy(d_bufferNeutrons, h_MergedNeutrons.neutrons, h_MergedNeutrons.allocatableNeutronNum * sizeof(Neutron), cudaMemcpyHostToDevice);
@@ -576,14 +566,10 @@ int main() {
             std::cout << "Neutron size after merging: for main neutron array: " << h_Neutrons.neutronSize << ", for added: " << h_Neutrons.addedNeutronSize << "\n";
             
 
-
-
         }
 
-
-
         int currentGenNeutronNum = h_NeutronsReceiver.neutronSize + h_NeutronsReceiver.addedNeutronSize;
-
+        double oldK = h_multK;
         h_multK = h_multK * static_cast<double>(currentGenNeutronNum) / static_cast<double>(previousGenNeutronNum);
         //h_multK = 1;
         cudaMemcpy(d_multK, &h_multK, sizeof(double), cudaMemcpyHostToDevice);
@@ -601,7 +587,7 @@ int main() {
 
 #ifdef TALLY
         if (i == 0) {
-            Tally::fluxTally2D_host(h_Neutrons, h_CubeSlab, 10, i);
+            Tally::fluxTally2D_host(h_Neutrons, h_CubeSlab, 10, i, h_multK);
         }
 #endif
     }
