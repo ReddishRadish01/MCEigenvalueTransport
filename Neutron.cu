@@ -158,6 +158,26 @@ void NeutronDistribution::setUniformNeutrons(double D_x, double D_y, double D_z)
 		}
 	}
 }
+
+__host__ __device__ void NeutronDistribution::setCenteredNeutrons(double D_x, double D_y, double D_z) {
+	GnuAMCM RNG(this->seedNo);
+	for (int i = 0; i < int(this->allocatableNeutronNum); i++) {
+		if (i < this->neutronSize) {
+			this->neutrons[i].pos.x = RNG.uniform_open(D_x*2.0/5.0, D_x*3.0/5.0);
+			this->neutrons[i].pos.y = RNG.uniform_open(D_y * 2.0 / 5.0, D_y * 3.0 / 5.0);
+			this->neutrons[i].pos.z = RNG.uniform_open(D_z * 2.0 / 5.0, D_z * 3.0 / 5.0);
+			this->neutrons[i].dirVec = vec3::randomUnit(RNG);
+			this->neutrons[i].status = true;
+			//this->neutrons[i].energy = 0.0;
+
+			this->addedNeutrons[i].Nullify();
+		}
+		else {
+			this->neutrons[i].Nullify();
+			this->addedNeutrons[i].Nullify();
+		}
+	}
+}
 /*
 __host__ void NeutronDistribution::updateAddedNeutronStatus() {
 	this->addedNeutronSize = this->addedNeutronIndex;

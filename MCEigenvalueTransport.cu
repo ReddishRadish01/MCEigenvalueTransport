@@ -18,7 +18,7 @@
 //#define NUMNEUTRONSPEC
 #define TALLY
 #define TALLYFETCHALL
-#define OOBCHECK
+//#define OOBCHECK
 
 
 #define CUDA_CHECK(call)                                                     \
@@ -362,7 +362,7 @@ __global__ void SingleCycle(ReflectiveSlab* Slab3D, NeutronDistribution* Neutron
 
 
 int main() {
-    int initialNeutronNum = 100000;  
+    int initialNeutronNum = 500000;  
     //int excessNumNeutron = initialNumNeutrons * 1.5;
     unsigned long long seedNo = 92235922381;
     int numCycle = 100;
@@ -402,7 +402,7 @@ int main() {
       */
     // build host struct
     NeutronDistribution h_Neutrons(initialNeutronNum, RNG.gen());
-    h_Neutrons.setUniformNeutrons(0.02, 0.02, 0.02);
+    h_Neutrons.setCenteredNeutrons(0.02, 0.02, 0.02);
     
     // build device struct pointer. allocate only the space for it.
     NeutronDistribution* d_Neutrons = nullptr;
@@ -510,14 +510,12 @@ int main() {
 #ifdef DEBUG
         std::cout << "AddedNeutron's info:\n";
 #endif
-        std::cout << "AddedNeutron's INFO:\n\n";
         SingleCycle_addedNeutron << <blockPerDim, threadPerBlock >> > (d_CubeSlab, d_Neutrons, d_SeedArr, d_multK, d_fissionSIG);
         CUDA_CHECK(cudaDeviceSynchronize());
 
 #ifdef DEBUG
         std::cout << "\nNeutron's Info:\n";
 #endif
-        std::cout << "\nNeutron's info:\n";
         addedNeutronPassResetter << <blockPerDim, threadPerBlock >> > (d_Neutrons);
         CUDA_CHECK(cudaDeviceSynchronize());
         /*
@@ -652,7 +650,7 @@ int main() {
 
             // bro you have to place this before you make h_MergedNeutrons a tmp struct for device sturct
 #ifdef TALLY
-            Tally::fluxTally2D_host(h_MergedNeutrons, h_CubeSlab, 10, i, h_multK);
+            Tally::fluxTally2D_host(h_MergedNeutrons, h_CubeSlab, 20, i, h_multK);
 #endif
             
             cudaMemcpy(d_bufferNeutrons, h_MergedNeutrons.neutrons, h_MergedNeutrons.allocatableNeutronNum * sizeof(Neutron), cudaMemcpyHostToDevice);
@@ -689,7 +687,7 @@ int main() {
 
 #ifdef TALLY
         if (i == 0) {
-            Tally::fluxTally2D_host(h_Neutrons, h_CubeSlab, 10, i, h_multK);
+            Tally::fluxTally2D_host(h_Neutrons, h_CubeSlab, 20, i, h_multK);
         }
 #endif
     }

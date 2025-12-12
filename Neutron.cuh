@@ -180,6 +180,7 @@ struct NeutronDistribution {
 
 	__host__ __device__ void setNeutrons(Spherical Dir, double energy);
 	__host__ __device__ void setUniformNeutrons(double D_x, double D_y, double D_z);
+	__host__ __device__ void setCenteredNeutrons(double D_x, double D_y, double D_z);
 	//__host__ __device__ void updateAddedNeutronStatus();
 };
 
