@@ -18,6 +18,7 @@
 //#define NUMNEUTRONSPEC
 #define TALLY
 #define TALLYFETCHALL
+#define OOBCHECK
 
 
 #define CUDA_CHECK(call)                                                     \
@@ -46,15 +47,33 @@ __global__ void SingleCycle_Neutron(ReflectiveSlab* Slab3D, NeutronDistribution*
     if (idx >= Neutrons->allocatableNeutronNum) { return; }
     GnuAMCM RNG(seedNo[idx]);
 
+#ifdef OOBCHECK
+    if (Slab3D->outOfRange(Neutrons->neutrons[idx])) {
+        //printf("in kernel print, Neutron: ");
+        Neutrons->neutrons[idx].printInfo_Kernel(idx);
+        
+    }
+#endif
     
 
-    if (!Neutrons->neutrons[idx].isNullified() && !Slab3D->outOfRange(Neutrons->neutrons[idx]) ) {
+    if (!Neutrons->neutrons[idx].isNullified()) {
         //if (Neutrons->neutrons[idx].status == true) { printf("neutron %d idx active\n", idx); }
         // run MC for neutrons
+        //printf("Still in top of the loop\n");
         double mainNeutron_DTC = Slab3D->DTC(Neutrons->neutrons[idx], RNG);
-        vec3 dirNormal{};
+        vec3 dirNormal{0, 0, 0};
         double mainNeutron_DTS = Slab3D->DTS(Neutrons->neutrons[idx], dirNormal);
-
+        if (mainNeutron_DTS == 0.0) {
+            //const char* status = "true";
+            //if (Neutrons->neutrons[idx].status == false) {
+            //    status = "false";
+            //}
+            printf("dts fucked neutron idx %d: (%f %f %f), (%f, %f, %f)\n", 
+                idx, Neutrons->neutrons[idx].pos.x, Neutrons->neutrons[idx].pos.y, Neutrons->neutrons[idx].pos.z, 
+                Neutrons->neutrons[idx].dirVec.x, Neutrons->neutrons[idx].dirVec.y, Neutrons->neutrons[idx].dirVec.z);
+            return;
+        }
+        //printf("End of main DTS calc\n");
         //printf("pos: idx %d : %f, %f, %f,\t", idx, Neutrons->neutrons[idx].pos.x, Neutrons->neutrons[idx].pos.y, Neutrons->neutrons[idx].pos.z);
         //printf("DTC: idx %d : %f, DTS: %f\n", idx, mainNeutron_DTC, mainNeutron_DTS);
 
@@ -89,9 +108,39 @@ __global__ void SingleCycle_Neutron(ReflectiveSlab* Slab3D, NeutronDistribution*
             }
 
         }
-        else {
-            Slab3D->reflection(Neutrons->neutrons[idx], mainNeutron_DTC, mainNeutron_DTS, dirNormal, RNG, idx);
-            // 이새끼를 recursion으로 풀려고 하니까 ㅈㄹ났던거임 - 함수안에 for loop으로 바꿈
+        else {  // if DTC < DTS:
+            
+            //씨발 경희대 ㅈ같은 와이파이 하나 못고치는 병신씨발 좆같네 시발 아아ㅏㅏ아ㅏ아ㅏㅇㅇ
+            //printf("In DTS>DTC statement, main loop, idx: %d\n", idx);
+            double newDTC = Slab3D->reflection_single_returnUpdatedDTC(Neutrons->neutrons[idx], mainNeutron_DTC, mainNeutron_DTS, dirNormal);
+            double newDTS = Slab3D->DTS(Neutrons->neutrons[idx], dirNormal);
+            while (newDTC > newDTS) {
+                newDTC = Slab3D->reflection_single_returnUpdatedDTC(Neutrons->neutrons[idx], newDTC, newDTS, dirNormal);
+                newDTS = Slab3D->DTS(Neutrons->neutrons[idx], dirNormal);
+            }
+            
+            Neutrons->neutrons[idx].updateWithLength(newDTC);
+            ReactionType RType = Slab3D->getInteractionType(Neutrons->neutrons[idx], RNG);
+
+            // reaction from updated reflected position:
+            if (RType == ReactionType::capture) {
+#ifdef DEBUG 
+                printf("neutron capture on idx %d\n", idx);
+#endif
+                Slab3D->absorption(Neutrons->neutrons[idx]);
+                atomicAdd(&(Neutrons->neutronSize), -1);
+            }
+            else if (RType == ReactionType::scatter) {
+                //printf("scatter on idx %d\n", idx);
+                Neutrons->neutrons[idx].dirVec = vec3::randomUnit(RNG);
+            }
+            else {
+#ifdef DEBUG 
+                printf("neutron fission on idx %d\n", idx);
+#endif
+                Slab3D->fission(Neutrons->neutrons[idx], Neutrons, RNG, k_mult, false);
+            }
+
         }
     }
     else { Neutrons->neutrons[idx].Nullify(); }
@@ -103,10 +152,9 @@ __global__ void SingleCycle_Neutron(ReflectiveSlab* Slab3D, NeutronDistribution*
     seedNo[idx] = RNG.gen();
 }
 
-
 __global__ void addedNeutronPassResetter(NeutronDistribution* Neutrons) {
     int idx = threadIdx.x + blockIdx.x * blockDim.x;
-    if (idx > Neutrons->allocatableNeutronNum) { return; }
+    if (idx >= Neutrons->allocatableNeutronNum) { return; }
 
     if (!Neutrons->addedNeutrons[idx].isNullified()) {
         Neutrons->addedNeutrons[idx].passFlag = false;
@@ -118,7 +166,16 @@ __global__ void SingleCycle_addedNeutron(ReflectiveSlab* Slab3D, NeutronDistribu
     if (idx >= Neutrons->allocatableNeutronNum) { return; }
     GnuAMCM RNG(seedNo[idx]);
 
-    if (!Neutrons->addedNeutrons[idx].isNullified() && !Slab3D->outOfRange(Neutrons->addedNeutrons[idx]) ) {
+#ifdef OOBCHECK
+    if (Slab3D->outOfRange(Neutrons->neutrons[idx])) {
+        //printf("in kernel print, addedNeutron");
+        Neutrons->addedNeutrons[idx].printInfo_Kernel(idx);
+
+    }
+#endif
+
+    //if (!Neutrons->addedNeutrons[idx].isNullified() && !Slab3D->outOfRange(Neutrons->addedNeutrons[idx]) ) {
+    if (!Neutrons->addedNeutrons[idx].isNullified()) {
         if (Neutrons->addedNeutrons[idx].passFlag) {
 #ifdef DEBUG
             printf("idx %d passed because it passFlag was true\n", idx);
@@ -129,8 +186,17 @@ __global__ void SingleCycle_addedNeutron(ReflectiveSlab* Slab3D, NeutronDistribu
         //if (true) {
         //printf("addedNeutron is working!\n");
         double addedNeutron_DTC = Slab3D->DTC(Neutrons->addedNeutrons[idx], RNG);
-        vec3 dirNormal{};
+        vec3 dirNormal{0, 0, 0};
         double addedNeutron_DTS = Slab3D->DTS(Neutrons->addedNeutrons[idx], dirNormal);
+        if (addedNeutron_DTS == 0.0) {
+            //const char* status = "true";
+            //if (Neutrons->neutrons[idx].status == false) {
+            //    status = "false";
+            //}
+            printf("dts fucked - addedNeutron idx %d: (%f %f %f), (%f, %f, %f)\n",
+                idx, Neutrons->addedNeutrons[idx].pos.x, Neutrons->addedNeutrons[idx].pos.y, Neutrons->addedNeutrons[idx].pos.z,
+                Neutrons->addedNeutrons[idx].dirVec.x, Neutrons->addedNeutrons[idx].dirVec.y, Neutrons->addedNeutrons[idx].dirVec.z);
+        }
 
         if (addedNeutron_DTS > addedNeutron_DTC) {
             Neutrons->addedNeutrons[idx].updateWithLength(addedNeutron_DTC);
@@ -154,8 +220,39 @@ __global__ void SingleCycle_addedNeutron(ReflectiveSlab* Slab3D, NeutronDistribu
                 Slab3D->fission(Neutrons->addedNeutrons[idx], Neutrons, RNG, k_mult, true);
             }
         }
-        else {
-            Slab3D->reflection(Neutrons->addedNeutrons[idx], addedNeutron_DTC, addedNeutron_DTS, dirNormal, RNG, idx);
+        else {  // if DTC < DTS:
+
+            //씨발 경희대 ㅈ같은 와이파이 하나 못고치는 병신씨발 좆같네 시발 아아ㅏㅏ아ㅏ아ㅏㅇㅇ
+            //printf("In DTS>DTC statement, main loop, idx: %d\n", idx);
+            double newDTC = Slab3D->reflection_single_returnUpdatedDTC(Neutrons->addedNeutrons[idx], addedNeutron_DTC, addedNeutron_DTS, dirNormal);
+            double newDTS = Slab3D->DTS(Neutrons->addedNeutrons[idx], dirNormal);
+            while (newDTC > newDTS) {
+                newDTC = Slab3D->reflection_single_returnUpdatedDTC(Neutrons->addedNeutrons[idx], newDTC, newDTS, dirNormal);
+                newDTS = Slab3D->DTS(Neutrons->addedNeutrons[idx], dirNormal);
+            }
+
+            Neutrons->addedNeutrons[idx].updateWithLength(newDTC);
+            ReactionType RType = Slab3D->getInteractionType(Neutrons->addedNeutrons[idx], RNG);
+
+            // reaction from updated reflected position:
+            if (RType == ReactionType::capture) {
+#ifdef DEBUG 
+                printf("neutron capture on idx %d\n", idx);
+#endif
+                Slab3D->absorption(Neutrons->addedNeutrons[idx]);
+                atomicAdd(&(Neutrons->addedNeutronSize), -1);
+            }
+            else if (RType == ReactionType::scatter) {
+                //printf("scatter on idx %d\n", idx);
+                Neutrons->addedNeutrons[idx].dirVec = vec3::randomUnit(RNG);
+            }
+            else {
+#ifdef DEBUG 
+                printf("neutron fission on idx %d\n", idx);
+#endif
+                Slab3D->fission(Neutrons->addedNeutrons[idx], Neutrons, RNG, k_mult, true);
+            }
+
         }
 
     }
@@ -265,10 +362,10 @@ __global__ void SingleCycle(ReflectiveSlab* Slab3D, NeutronDistribution* Neutron
 
 
 int main() {
-    int initialNeutronNum = 500000;  
+    int initialNeutronNum = 100000;  
     //int excessNumNeutron = initialNumNeutrons * 1.5;
-    unsigned long long seedNo = 92235942397;
-    int numCycle = 110;
+    unsigned long long seedNo = 92235922381;
+    int numCycle = 100;
     int initialOffset = 20;
     int threadPerBlock = 32;
     int blockPerDim = (initialNeutronNum + threadPerBlock - 1) / threadPerBlock;
@@ -399,7 +496,8 @@ int main() {
     NeutronDistribution meta(h_NeutronsReceiver.allocatableNeutronNum, RNG.gen());
 
     std::vector<double> k_Tally;
-    numCycle = 110;
+    
+
     for (int i = 0; i < numCycle; i++) {
 
         int previousGenNeutronNum = h_NeutronsReceiver.neutronSize + h_NeutronsReceiver.addedNeutronSize;
@@ -412,12 +510,14 @@ int main() {
 #ifdef DEBUG
         std::cout << "AddedNeutron's info:\n";
 #endif
+        std::cout << "AddedNeutron's INFO:\n\n";
         SingleCycle_addedNeutron << <blockPerDim, threadPerBlock >> > (d_CubeSlab, d_Neutrons, d_SeedArr, d_multK, d_fissionSIG);
         CUDA_CHECK(cudaDeviceSynchronize());
 
 #ifdef DEBUG
         std::cout << "\nNeutron's Info:\n";
 #endif
+        std::cout << "\nNeutron's info:\n";
         addedNeutronPassResetter << <blockPerDim, threadPerBlock >> > (d_Neutrons);
         CUDA_CHECK(cudaDeviceSynchronize());
         /*
@@ -470,7 +570,8 @@ int main() {
                 std::cout << "idx" << j << ", info: ";
                 h_NeutronsReceiver.neutrons[j].printInfo();
 #endif
-                if (!h_NeutronsReceiver.neutrons[j].isNullified() && !h_CubeSlab.outOfRange(h_NeutronsReceiver.neutrons[i])  ) {
+                if (!h_NeutronsReceiver.neutrons[j].isNullified()) {
+                //if (!h_NeutronsReceiver.neutrons[j].isNullified() && !h_CubeSlab.outOfRange(h_NeutronsReceiver.neutrons[i])  ) {
                     h_NeutronsReceiver.neutrons[j].passFlag = false;
                     NeutronContainer.push_back(h_NeutronsReceiver.neutrons[j]);
                 }
@@ -487,7 +588,8 @@ int main() {
                 h_NeutronsReceiver.addedNeutrons[j].printInfo();
 #endif
 
-                if (!h_NeutronsReceiver.addedNeutrons[j].isNullified() && !h_CubeSlab.outOfRange(h_NeutronsReceiver.addedNeutrons[i])  ) {
+                if (!h_NeutronsReceiver.addedNeutrons[j].isNullified()) {
+                //if (!h_NeutronsReceiver.addedNeutrons[j].isNullified() && !h_CubeSlab.outOfRange(h_NeutronsReceiver.addedNeutrons[i])  ) {
                     h_NeutronsReceiver.addedNeutrons[j].passFlag = false;
                     NeutronContainer.push_back(h_NeutronsReceiver.addedNeutrons[j]);
                 }
@@ -550,7 +652,7 @@ int main() {
 
             // bro you have to place this before you make h_MergedNeutrons a tmp struct for device sturct
 #ifdef TALLY
-            Tally::fluxTally2D_host(h_MergedNeutrons, h_CubeSlab, 20, i, h_multK);
+            Tally::fluxTally2D_host(h_MergedNeutrons, h_CubeSlab, 10, i, h_multK);
 #endif
             
             cudaMemcpy(d_bufferNeutrons, h_MergedNeutrons.neutrons, h_MergedNeutrons.allocatableNeutronNum * sizeof(Neutron), cudaMemcpyHostToDevice);

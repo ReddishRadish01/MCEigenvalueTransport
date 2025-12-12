@@ -102,7 +102,7 @@ struct Neutron {
 	bool passFlag;
 
 	__host__ __device__ Neutron()
-		: pos({ 0.0, 0.0, 0.0 }), dirVec({ 0.0, 0.0, 0.0 }), energy(0.0), status(false), passFlag(false) {}
+		: pos({ 0.0, 0.0, 0.0 }), dirVec({ 0.0, 0.0, 0.0 }), energy(0.0), status(false), passFlag(true) {}
 
 	__host__ __device__ Neutron(vec3 pos, vec3 dirVec, double energy)
 		: pos(pos), dirVec(dirVec), energy(energy), status(true), passFlag(false)

@@ -93,6 +93,7 @@ __host__ __device__ void Neutron::Nullify() {
 	this->dirVec = { 0.0, 0.0, 0.0 };
 	this->energy = 0.0;
 	this->status = false;
+	this->passFlag = true;
 }
 
 __host__ __device__ void Neutron::reInitialize(vec3 pos, vec3 dirVec, double energy) {

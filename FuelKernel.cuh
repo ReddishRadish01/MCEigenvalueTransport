@@ -66,7 +66,8 @@ struct ReflectiveSlab {
 
 	__host__ __device__ 
 	bool inline outOfRange(vec3 pos) const {
-		if (pos.x < 0.0 || pos.x > D_x || pos.y < 0.0 || pos.y > D_y || pos.z < 0.0 || pos.z > D_z) { return true; }
+		double delta = 0.00001;
+		if (pos.x < 0.0 - delta || pos.x > D_x + delta || pos.y < 0.0 - delta || pos.y > D_y + delta || pos.z < 0.0 - delta || pos.z > D_z + delta) { return true; }
 		else { return false; }
 	}
 
@@ -79,9 +80,10 @@ struct ReflectiveSlab {
 
 	__host__ __device__ double DTC(Neutron incidentNeutron, GnuAMCM& RNG);
 
-	__host__ __device__ double DTS(Neutron& incidentNeutron, vec3& dirNormal);
+	__host__ __device__ double DTS(Neutron incidentNeutron, vec3& dirNormal);
 
 	__host__ __device__ void reflection(Neutron& incidentNeutron, double DTC, double DTS, vec3 dirNormal, GnuAMCM& RNG, int idx);
+	__host__ __device__ double reflection_single_returnUpdatedDTC(Neutron& incidentNeutron, double DTC, double DTS, vec3 dirNormal);
 
 	__host__ __device__ void elasticScattering(Neutron& incidentNeutron, GnuAMCM& RNG);
 

@@ -23,6 +23,7 @@ double ReflectiveSlab::DTC(Neutron incidentNeutron, GnuAMCM& RNG) {
 	return distance;
 }
 
+/*
 // returns [m], and Surface normal of headed direction <- REQUIRED!!! I used reference passing for Colliding surface normal
 __host__ __device__
 double ReflectiveSlab::DTS(Neutron& incidentNeutron, vec3& dirNormal) {
@@ -75,8 +76,87 @@ double ReflectiveSlab::DTS(Neutron& incidentNeutron, vec3& dirNormal) {
 		tHit = tZ;
 		dirNormal = tZ_Dir;
 	}
+	else { printf("\ntHit not set - fuck"); }
 	return tHit;
 }
+*/
+__host__ __device__
+double ReflectiveSlab::DTS(Neutron n, vec3& dirNormal) {
+	const double BIG = 1.0e300;
+	double tHit = BIG;
+	bool hitFound = false;
+
+	vec3 N_yz_Pos = { 1, 0, 0 };
+	vec3 N_yz_Neg = { -1, 0, 0 };
+	vec3 N_xy_Pos = { 0, 0, 1 };
+	vec3 N_xy_Neg = { 0, 0, -1 };
+	vec3 N_xz_Pos = { 0, 1, 0 };
+	vec3 N_xz_Neg = { 0, -1, 0 };
+
+	// X faces
+	if (n.dirVec.x > 0.0) {
+		double tX = (this->D_x - n.pos.x) / n.dirVec.x;
+		if (tX >= 0.0 && tX < tHit) {
+			tHit = tX;
+			dirNormal = N_yz_Pos;
+			hitFound = true;
+		}
+	}
+	else if (n.dirVec.x < 0.0) {
+		double tX = (0.0 - n.pos.x) / n.dirVec.x;
+		if (tX >= 0.0 && tX < tHit) {
+			tHit = tX;
+			dirNormal = N_yz_Neg;
+			hitFound = true;
+		}
+	}
+
+	// Y faces
+	if (n.dirVec.y > 0.0) {
+		double tY = (this->D_y - n.pos.y) / n.dirVec.y;
+		if (tY >= 0.0 && tY < tHit) {
+			tHit = tY;
+			dirNormal = N_xz_Pos;
+			hitFound = true;
+		}
+	}
+	else if (n.dirVec.y < 0.0) {
+		double tY = (0.0 - n.pos.y) / n.dirVec.y;
+		if (tY >= 0.0 && tY < tHit) {
+			tHit = tY;
+			dirNormal = N_xz_Neg;
+			hitFound = true;
+		}
+	}
+
+	// Z faces
+	if (n.dirVec.z > 0.0) {
+		double tZ = (this->D_z - n.pos.z) / n.dirVec.z;
+		if (tZ >= 0.0 && tZ < tHit) {
+			tHit = tZ;
+			dirNormal = N_xy_Pos;
+			hitFound = true;
+		}
+	}
+	else if (n.dirVec.z < 0.0) {
+		double tZ = (0.0 - n.pos.z) / n.dirVec.z;
+		if (tZ >= 0.0 && tZ < tHit) {
+			tHit = tZ;
+			dirNormal = N_xy_Neg;
+			hitFound = true;
+		}
+	}
+
+	if (!hitFound) {
+		printf("DTS: no positive wall intersection, wtf (pos = %f %f %f, dir = %f %f %f)\n",
+			n.pos.x, n.pos.y, n.pos.z,
+			n.dirVec.x, n.dirVec.y, n.dirVec.z);
+		return 0.0;  // or BIG, but better to treat as an error
+	}
+
+	return tHit;
+}
+
 
 /*
 // we need to redesign this reflection: this recursion is bad? idk
@@ -120,20 +200,24 @@ void ReflectiveSlab::reflection(Neutron& n,
 	GnuAMCM& RNG,
 	int idx)
 {	
-	int count = 0;
+	double origDTC = DTC;
 	// handle the *first* segment we already computed
 	for (int bounce = 0; bounce <= 3000; ++bounce) {
 		// kill after too many bounces
 		if (bounce > 0) {
 			// for bounce > 0, recompute DTC/DTS with updated neutron
-			DTC = this->DTC(n, RNG);
+			//DTC = this->DTC(n, RNG);
 			dirNormal = vec3{ 0,0,0 };
 			DTS = this->DTS(n, dirNormal);
 		}
 
 		vec3 collisionPos = n.pos + n.dirVec * DTS;
+		if (!this->outOfRange(collisionPos)) {
+			printf("collisionPos MISMATCH - NOT INside the boundary, idx: %d\n", idx);
+			return;
+		}
 		vec3 reflectVec = n.dirVec - dirNormal * (2 * n.dirVec.dot(dirNormal));
-		vec3 afterPos = collisionPos + reflectVec * (DTC - DTS);
+		vec3 afterPos = collisionPos + reflectVec * (origDTC - DTS);
 
 		if (!this->outOfRange(afterPos)) {
 			// we safely end inside the slab
@@ -145,7 +229,7 @@ void ReflectiveSlab::reflection(Neutron& n,
 		// still out of range: update neutron to collision point and reflect
 		n.pos = collisionPos;
 		n.dirVec = reflectVec;
-		count = bounce;
+		origDTC -= DTS;
 	}
 
 	// too many bounces, kill neutron
@@ -155,6 +239,33 @@ void ReflectiveSlab::reflection(Neutron& n,
 #endif
 
 }
+
+// single fucking reflection: reflection loop is inside the fucking kernel
+__host__ __device__
+double ReflectiveSlab::reflection_single_returnUpdatedDTC(Neutron& n,
+	double DTC, double DTS,
+	vec3 dirNormal
+	)
+{
+	double localDTC = DTC;
+	double localDTS = DTS;
+	
+	vec3 collisionPos = n.pos + n.dirVec * localDTS;
+
+	vec3 reflectVec = n.dirVec - dirNormal * 2 * n.dirVec.dot(dirNormal);
+	//vec3 afterPos = collisionPos + reflectVec * (localDTC - DTS);
+		
+	// Note that this reflection only works when original DTC is larger than DTS - if not, below statement will result negative values.
+	localDTC -= DTS;
+
+	// move to the place that reflection starts - at the boundary. let the kernel do the moving neutrons with updated DTC.
+	n.pos = collisionPos;
+	n.dirVec = reflectVec;
+
+	return localDTC;
+}
+
+
 
 __host__ __device__
 void ReflectiveSlab::elasticScattering(Neutron& incidentNeutron, GnuAMCM& RNG) {

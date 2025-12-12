@@ -18,11 +18,15 @@ void Tally::fluxTally2D_host(NeutronDistribution Neutrons, ReflectiveSlab Slab3D
 	double widthPerCell = Slab3D.D_x / numRegionsPerSide;
 	int lengthCellCount = static_cast<int>(Slab3D.D_y / widthPerCell);
 	std::vector<std::vector<int>> populationArr(numRegionsPerSide, std::vector<int>(lengthCellCount, 0));
-	std::cout << Neutrons.neutrons[2].pos.x << " x pos\n";
+
 	for (int i = 0; i < Neutrons.allocatableNeutronNum; i++) {
 		if (!Neutrons.neutrons[i].isNullified()) {
 			int widthIndex = static_cast<int>(Neutrons.neutrons[i].pos.x / widthPerCell);
 			int lengthIndex = static_cast<int>(Neutrons.neutrons[i].pos.y / widthPerCell);
+			if (widthIndex < 0) { widthIndex = 0; }
+			if (widthIndex >= numRegionsPerSide) { widthIndex = numRegionsPerSide - 1; }
+			if (lengthIndex < 0) { lengthIndex = 0; }
+			if (lengthIndex >= numRegionsPerSide) { lengthIndex = numRegionsPerSide - 1; }
 			// 이거 밑에 이건 좀 나중에도 보고 배워라 이래놓으니까 벡터 인덱스 에러가 나지 시 ㅂ
 			//if (widthIndex >= 0 && widthIndex <= numRegionsPerSide && lengthIndex >= 0 && lengthIndex <= lengthCellCount) {
 			if (widthIndex >= 0 && widthIndex < numRegionsPerSide && lengthIndex >= 0 && lengthIndex < lengthCellCount) {
@@ -39,6 +43,10 @@ void Tally::fluxTally2D_host(NeutronDistribution Neutrons, ReflectiveSlab Slab3D
 		if (!Neutrons.addedNeutrons[i].isNullified()) {
 			int widthIndex = static_cast<int>(Neutrons.addedNeutrons[i].pos.x / widthPerCell);
 			int lengthIndex = static_cast<int>(Neutrons.addedNeutrons[i].pos.y / widthPerCell);
+			if (widthIndex < 0) { widthIndex = 0; }
+			if (widthIndex >= numRegionsPerSide) { widthIndex = numRegionsPerSide - 1; }
+			if (lengthIndex < 0) { lengthIndex = 0; }
+			if (lengthIndex >= numRegionsPerSide) { lengthIndex = numRegionsPerSide - 1; }
 			if (widthIndex >= 0 && widthIndex < numRegionsPerSide && lengthIndex >= 0 && lengthIndex < lengthCellCount) {
 				populationArr[widthIndex][lengthIndex]++;
 			}
