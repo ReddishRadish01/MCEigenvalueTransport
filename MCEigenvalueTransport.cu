@@ -59,35 +59,17 @@ __global__ void SingleCycle_Neutron(ReflectiveSlab* Slab3D, NeutronDistribution*
     if (!Neutrons->neutrons[idx].isNullified()) {
         //if (Neutrons->neutrons[idx].status == true) { printf("neutron %d idx active\n", idx); }
         // run MC for neutrons
-        //printf("Still in top of the loop\n");
         double mainNeutron_DTC = Slab3D->DTC(Neutrons->neutrons[idx], RNG);
         vec3 dirNormal{0, 0, 0};
         double mainNeutron_DTS = Slab3D->DTS(Neutrons->neutrons[idx], dirNormal);
-        if (mainNeutron_DTS == 0.0) {
-            //const char* status = "true";
-            //if (Neutrons->neutrons[idx].status == false) {
-            //    status = "false";
-            //}
-            printf("dts fucked neutron idx %d: (%f %f %f), (%f, %f, %f)\n", 
-                idx, Neutrons->neutrons[idx].pos.x, Neutrons->neutrons[idx].pos.y, Neutrons->neutrons[idx].pos.z, 
-                Neutrons->neutrons[idx].dirVec.x, Neutrons->neutrons[idx].dirVec.y, Neutrons->neutrons[idx].dirVec.z);
-            return;
-        }
-        //printf("End of main DTS calc\n");
-        //printf("pos: idx %d : %f, %f, %f,\t", idx, Neutrons->neutrons[idx].pos.x, Neutrons->neutrons[idx].pos.y, Neutrons->neutrons[idx].pos.z);
-        //printf("DTC: idx %d : %f, DTS: %f\n", idx, mainNeutron_DTC, mainNeutron_DTS);
-
-        //if (idx == 3) { atomicAdd(&(Neutrons->neutronSize), -1); }
 
         if (mainNeutron_DTS > mainNeutron_DTC) { // reaction!!!
-            //if (true) {
             // step the neutron forward
             Neutrons->neutrons[idx].updateWithLength(mainNeutron_DTC);
-            // now the reaction
 
+            // now the reaction
             ReactionType RType = Slab3D->getInteractionType(Neutrons->neutrons[idx], RNG);
 
-            //if (true) {
             if (RType == ReactionType::capture) {
                 #ifdef DEBUG 
                     printf("neutron capture on idx %d\n", idx); 
@@ -109,9 +91,6 @@ __global__ void SingleCycle_Neutron(ReflectiveSlab* Slab3D, NeutronDistribution*
 
         }
         else {  // if DTC < DTS:
-            
-            //씨발 경희대 ㅈ같은 와이파이 하나 못고치는 병신씨발 좆같네 시발 아아ㅏㅏ아ㅏ아ㅏㅇㅇ
-            //printf("In DTS>DTC statement, main loop, idx: %d\n", idx);
             double newDTC = Slab3D->reflection_single_returnUpdatedDTC(Neutrons->neutrons[idx], mainNeutron_DTC, mainNeutron_DTS, dirNormal);
             double newDTS = Slab3D->DTS(Neutrons->neutrons[idx], dirNormal);
             while (newDTC > newDTS) {
@@ -170,11 +149,8 @@ __global__ void SingleCycle_addedNeutron(ReflectiveSlab* Slab3D, NeutronDistribu
     if (Slab3D->outOfRange(Neutrons->neutrons[idx])) {
         //printf("in kernel print, addedNeutron");
         Neutrons->addedNeutrons[idx].printInfo_Kernel(idx);
-
     }
 #endif
-
-    //if (!Neutrons->addedNeutrons[idx].isNullified() && !Slab3D->outOfRange(Neutrons->addedNeutrons[idx]) ) {
     if (!Neutrons->addedNeutrons[idx].isNullified()) {
         if (Neutrons->addedNeutrons[idx].passFlag) {
 #ifdef DEBUG
@@ -188,15 +164,6 @@ __global__ void SingleCycle_addedNeutron(ReflectiveSlab* Slab3D, NeutronDistribu
         double addedNeutron_DTC = Slab3D->DTC(Neutrons->addedNeutrons[idx], RNG);
         vec3 dirNormal{0, 0, 0};
         double addedNeutron_DTS = Slab3D->DTS(Neutrons->addedNeutrons[idx], dirNormal);
-        if (addedNeutron_DTS == 0.0) {
-            //const char* status = "true";
-            //if (Neutrons->neutrons[idx].status == false) {
-            //    status = "false";
-            //}
-            printf("dts fucked - addedNeutron idx %d: (%f %f %f), (%f, %f, %f)\n",
-                idx, Neutrons->addedNeutrons[idx].pos.x, Neutrons->addedNeutrons[idx].pos.y, Neutrons->addedNeutrons[idx].pos.z,
-                Neutrons->addedNeutrons[idx].dirVec.x, Neutrons->addedNeutrons[idx].dirVec.y, Neutrons->addedNeutrons[idx].dirVec.z);
-        }
 
         if (addedNeutron_DTS > addedNeutron_DTC) {
             Neutrons->addedNeutrons[idx].updateWithLength(addedNeutron_DTC);
@@ -221,8 +188,6 @@ __global__ void SingleCycle_addedNeutron(ReflectiveSlab* Slab3D, NeutronDistribu
             }
         }
         else {  // if DTC < DTS:
-
-            //씨발 경희대 ㅈ같은 와이파이 하나 못고치는 병신씨발 좆같네 시발 아아ㅏㅏ아ㅏ아ㅏㅇㅇ
             //printf("In DTS>DTC statement, main loop, idx: %d\n", idx);
             double newDTC = Slab3D->reflection_single_returnUpdatedDTC(Neutrons->addedNeutrons[idx], addedNeutron_DTC, addedNeutron_DTS, dirNormal);
             double newDTS = Slab3D->DTS(Neutrons->addedNeutrons[idx], dirNormal);
@@ -254,7 +219,6 @@ __global__ void SingleCycle_addedNeutron(ReflectiveSlab* Slab3D, NeutronDistribu
             }
 
         }
-
     }
     else { Neutrons->addedNeutrons[idx].Nullify(); }
 
@@ -267,108 +231,17 @@ __global__ void SingleCycle_addedNeutron(ReflectiveSlab* Slab3D, NeutronDistribu
 
 
 
-/*
-// for now lets design our program to 
-__global__ void SingleCycle(ReflectiveSlab* Slab3D, NeutronDistribution* Neutrons, unsigned long long* seedNo, double* k_mult, int* fissionSIG) {
-    int idx = threadIdx.x + blockIdx.x * blockDim.x;
-    if (idx >= Neutrons->allocatableNeutronNum) { return; }
-    GnuAMCM RNG(seedNo[idx]);
-
-    if (!Neutrons->addedNeutrons[idx].isNullified()) {
-        // for freshly made neutorns - check it
-        if (Neutrons->addedNeutrons[idx].passFlag) {
-            Neutrons->addedNeutrons[idx].passFlag = false;
-            return;
-        }
-
-        //if (true) {
-        //printf("addedNeutron is working!\n");
-        double addedNeutron_DTC = Slab3D->DTC(Neutrons->addedNeutrons[idx], RNG);
-        vec3 dirNormal{};
-        double addedNeutron_DTS = Slab3D->DTS(Neutrons->addedNeutrons[idx], dirNormal);
-
-        if (addedNeutron_DTS > addedNeutron_DTC) {
-            Neutrons->addedNeutrons[idx].updateWithLength(addedNeutron_DTC);
-            ReactionType addedNeutronRType = Slab3D->getInteractionType(Neutrons->addedNeutrons[idx], RNG);
-            if (addedNeutronRType == ReactionType::capture) {
-                //if (true) {
-                Slab3D->absorption(Neutrons->addedNeutrons[idx]);
-               // printf(" absorption in addedNeutron idx %d\n", idx);
-                atomicAdd(&(Neutrons->addedNeutronSize), -1);
-            }
-            else if (addedNeutronRType == ReactionType::scatter) {
-                Neutrons->addedNeutrons[idx].dirVec = vec3::randomUnit(RNG);
-            }
-            else {
-                *fissionSIG = 1;
-                Slab3D->fission(Neutrons->addedNeutrons[idx], Neutrons, RNG, k_mult, false);
-            }
-        }
-        else {
-            int counter = 0;
-            Slab3D->reflection(Neutrons->addedNeutrons[idx], addedNeutron_DTC, addedNeutron_DTS, dirNormal, RNG, counter);
-        }
-
-    }
-
-    if (!Neutrons->neutrons[idx].isNullified()) {
-        //if (Neutrons->neutrons[idx].status == true) { printf("neutron %d idx active\n", idx); }
-        // run MC for neutrons
-        double mainNeutron_DTC = Slab3D->DTC(Neutrons->neutrons[idx], RNG);
-        vec3 dirNormal{};
-        double mainNeutron_DTS = Slab3D->DTS(Neutrons->neutrons[idx], dirNormal);
-
-        //printf("pos: idx %d : %f, %f, %f,\t", idx, Neutrons->neutrons[idx].pos.x, Neutrons->neutrons[idx].pos.y, Neutrons->neutrons[idx].pos.z);
-        //printf("DTC: idx %d : %f, DTS: %f\n", idx, mainNeutron_DTC, mainNeutron_DTS);
-
-        //if (idx == 3) { atomicAdd(&(Neutrons->neutronSize), -1); }
-
-        if (mainNeutron_DTS > mainNeutron_DTC) { // reaction!!!
-            //if (true) {
-            Neutrons->neutrons[idx].updateWithLength(mainNeutron_DTC);
-            // now the reaction
-
-            ReactionType RType = Slab3D->getInteractionType(Neutrons->neutrons[idx], RNG);
-
-            //if (true) {
-            if (RType == ReactionType::capture) {
-                //printf("capture on idx %d\n", idx);
-                Slab3D->absorption(Neutrons->neutrons[idx]);
-                //printf("Im working!\n");
-                atomicAdd(&(Neutrons->neutronSize), -1);
-            }
-            else if (RType == ReactionType::scatter) {
-                //printf("scatter on idx %d\n", idx);
-                Neutrons->neutrons[idx].dirVec = vec3::randomUnit(RNG);
-            }
-            else {
-                //printf("fission on idx %d\n", idx);
-                Slab3D->fission(Neutrons->neutrons[idx], Neutrons, RNG, k_mult, true);
-            }
-
-        }
-        else {
-            int counter = 0;
-            Slab3D->reflection(Neutrons->neutrons[idx], mainNeutron_DTC, mainNeutron_DTS, dirNormal, RNG, counter);
-            // 이새끼를 recursion으로 풀려고 하니까 ㅈㄹ났던거임 - 함수안에 for loop으로 바꿈
-        }
-    }
-
-
-    seedNo[idx] = RNG.gen();
-
-}
-*/
-
-
 int main() {
     int initialNeutronNum = 500000;  
     //int excessNumNeutron = initialNumNeutrons * 1.5;
     unsigned long long seedNo = 92235922381;
-    int numCycle = 100;
+    int numCycle = 120;
     int initialOffset = 20;
     int threadPerBlock = 32;
     int blockPerDim = (initialNeutronNum + threadPerBlock - 1) / threadPerBlock;
+
+    std::ofstream kTallyTxt;
+    kTallyTxt.open("k_tally.txt");
 
      /*
       *  ___ _  _  ___     ___ ___ _____ _   _ ___ 
@@ -402,7 +275,8 @@ int main() {
       */
     // build host struct
     NeutronDistribution h_Neutrons(initialNeutronNum, RNG.gen());
-    h_Neutrons.setCenteredNeutrons(0.02, 0.02, 0.02);
+    //h_Neutrons.setCenteredNeutrons(0.02, 0.02, 0.02);
+    h_Neutrons.setUniformNeutrons(0.02, 0.02, 0.02);
     
     // build device struct pointer. allocate only the space for it.
     NeutronDistribution* d_Neutrons = nullptr;
@@ -484,7 +358,7 @@ int main() {
     cudaMalloc(&d_CubeSlab, sizeof(ReflectiveSlab));
     cudaMemcpy(d_CubeSlab, &h_CubeSlab, sizeof(ReflectiveSlab), cudaMemcpyHostToDevice);
 
-    double h_multK = 1.0;
+    double h_multK = 1.2;
     double* d_multK = nullptr;
     cudaMalloc(&d_multK, sizeof(double));
     cudaMemcpy(d_multK, &h_multK, sizeof(double), cudaMemcpyHostToDevice);
@@ -681,6 +555,8 @@ int main() {
 #endif
         std::cout << " total Neutron : " << currentGenNeutronNum << ", multiplication factor k: " << std::fixed << std::setprecision(6) << h_multK << "\n\n";
 
+        kTallyTxt << i << " " << currentGenNeutronNum << " " << h_multK << "\n";
+
         if (i >= initialOffset) {
             k_Tally.push_back(h_multK);
         }
@@ -703,12 +579,13 @@ int main() {
         stdev += std::pow((k_Tally[i] - avg), 2);
     }
     stdev /= (numCycle - initialOffset);
+    stdev = stdev 
 
     std::cout << "\nFor total of ~" << initialNeutronNum << " neutrons, result of K-Tally over " << numCycle - initialOffset << " cycles:\n";
     std::cout << "k = " << avg << " pm " << stdev << "\n";
 
 
-
+    kTallyTxt.close();
 
     delete[] h_SeedArr;
     
